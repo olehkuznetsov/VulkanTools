@@ -575,6 +575,7 @@ struct WritePPMCleanupData {
     bool mem3mapped;
     VkCommandBuffer commandBuffer;
     VkCommandPool commandPool;
+    VkSemaphore semaphore;
     ~WritePPMCleanupData();
 };
 
@@ -589,6 +590,7 @@ WritePPMCleanupData::~WritePPMCleanupData() {
 
     if (commandBuffer) pTableDevice->FreeCommandBuffers(device, commandPool, 1, &commandBuffer);
     if (commandPool) pTableDevice->DestroyCommandPool(device, commandPool, NULL);
+    if (semaphore) pTableDevice->DestroySemaphore(device, semaphore, NULL);
 }
 
 // Save an image to a PPM image file.
@@ -964,6 +966,11 @@ static bool writePPM(const char *filename, VkImage image1) {
     err = pTableCommandBuffer->EndCommandBuffer(data.commandBuffer);
     assert(!err);
 
+    VkSemaphoreCreateInfo semaphoreInfo = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    if (pTableDevice->CreateSemaphore(device, &semaphoreInfo, nullptr, &data.semaphore) != VK_SUCCESS) {
+        return false;
+    }    
+
     VkFence nullFence = {VK_NULL_HANDLE};
     VkSubmitInfo submitInfo;
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -973,8 +980,8 @@ static bool writePPM(const char *filename, VkImage image1) {
     submitInfo.pWaitDstStageMask = NULL;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &data.commandBuffer;
-    submitInfo.signalSemaphoreCount = 0;
-    submitInfo.pSignalSemaphores = NULL;
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = &data.semaphore;
 
     // Wait for operations on all queues to complete before performing the image copy.
     err = pTableDevice->DeviceWaitIdle(device);
