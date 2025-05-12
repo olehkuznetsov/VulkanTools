@@ -106,7 +106,6 @@ if(BUILD_SCREENSHOT)
     add_library(VkLayer_screenshot MODULE)
     target_sources(VkLayer_screenshot PRIVATE
         screenshot.cpp
-        screenshot_parsing.h
         screenshot_parsing.cpp
         screenshot_parsing.h
         vk_layer_table.cpp
