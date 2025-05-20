@@ -53,11 +53,17 @@ const char* GetToken(SettingView state) {
 void LoadMetaHeader(Header& header, const QJsonObject& json_object) {
     header.label = ReadStringValue(json_object, "label");
     header.description = ReadStringValue(json_object, "description");
+    if (json_object.value("detailed") != QJsonValue::Undefined) {
+        header.detailed = ReadStringValue(json_object, "detailed");
+    }
     if (json_object.value("url") != QJsonValue::Undefined) {
         header.url = Path(ReadStringValue(json_object, "url"), false);
     }
     if (json_object.value("status") != QJsonValue::Undefined) {
         header.status = GetStatusType(ReadStringValue(json_object, "status").c_str());
+    }
+    if (json_object.value("deprecated_by_key") != QJsonValue::Undefined) {
+        header.deprecated_by_key = ReadStringValue(json_object, "deprecated_by_key");
     }
     if (json_object.value("view") != QJsonValue::Undefined) {
         header.view = GetSettingView(ReadStringValue(json_object, "view").c_str());

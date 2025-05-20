@@ -414,7 +414,13 @@ bool Configurator::WriteLayersSettings(OverrideArea override_area, const Path& l
                     stream << "# ";
                     stream << meta->label.c_str();
                     stream << "\n# =====================\n# <LayerIdentifier>.";
-                    stream << meta->key.c_str() << "\n";
+                    stream << meta->key.c_str();
+
+                    if (meta->status != STATUS_STABLE) {
+                        stream << format(" (%s)", GetToken(meta->status)).c_str();
+                    }
+
+                    stream << "\n";
 
                     // Break up description into smaller words
                     std::string description = meta->description;
@@ -442,6 +448,14 @@ bool Configurator::WriteLayersSettings(OverrideArea override_area, const Path& l
                     // If feature has unmet dependency, output it but comment it out
                     if (::CheckDependence(*meta, parameter.settings) != SETTING_DEPENDENCE_ENABLE) {
                         stream << "#";
+                    }
+
+                    if (meta->status == STATUS_DEPRECATED && !meta->deprecated_by_key.empty()) {
+                        const SettingMeta* replaced_setting = FindSetting(layer->settings, meta->deprecated_by_key.c_str());
+
+                        stream << format("# This setting was deprecated and replaced by '%s' (%s) setting.\n",
+                                         replaced_setting->label.c_str(), replaced_setting->key.c_str())
+                                      .c_str();
                     }
 
                     stream << lc_layer_name.c_str() << setting_data->key.c_str() << " = ";
@@ -659,7 +673,7 @@ std::string Configurator::Log() const {
     log += "\n";
 
     log += "System Information:\n";
-#if QT_VERSION < QT_VERSION_CHECK(6, 1, 0)
+#if VKC_PLATFORM == PLATFORM_LINUX || QT_VERSION < QT_VERSION_CHECK(6, 1, 0)
     log += format(" - %s\n", QSysInfo::prettyProductName().toStdString().c_str());
 #else
     const QOperatingSystemVersion& current = QOperatingSystemVersion::current();
@@ -903,6 +917,16 @@ bool Configurator::Load() {
             this->hide_message_boxes_flags |= GetHideMessageBit(token.c_str());
         }
 
+        const QJsonObject& json_hide_layer_message_boxes_object =
+            json_interface_object.value("hide_layer_message_boxes").toObject();
+        this->ignored_messages.clear();
+        const QStringList json_hide_layer_message_boxes_keys = json_hide_layer_message_boxes_object.keys();
+        for (int i = 0, n = json_hide_layer_message_boxes_keys.size(); i < n; ++i) {
+            const std::string& key = json_hide_layer_message_boxes_keys[i].toStdString();
+            const int version = json_hide_layer_message_boxes_object.value(key.c_str()).toInt();
+            this->ignored_messages.insert(std::make_pair(key, version));
+        }
+
         this->active_tab = GetTabType(json_interface_object.value("active_tab").toString().toStdString().c_str());
 
         // TAB_CONFIGURATIONS
@@ -1033,6 +1057,13 @@ bool Configurator::Save() const {
             }
         }
         json_interface_object.insert("hide_message_boxes", json_hide_message_boxes_array);
+
+        QJsonObject json_hide_layer_message_boxes_object;
+        for (auto it = this->ignored_messages.begin(); it != this->ignored_messages.end(); ++it) {
+            json_hide_layer_message_boxes_object.insert(it->first.c_str(), it->second);
+        }
+        json_interface_object.insert("hide_layer_message_boxes", json_hide_layer_message_boxes_object);
+
         json_interface_object.insert("active_tab", GetToken(this->active_tab));
 
         json_root_object.insert("interface", json_interface_object);

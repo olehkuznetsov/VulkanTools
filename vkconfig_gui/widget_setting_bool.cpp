@@ -21,6 +21,8 @@
 
 #include "widget_setting_bool.h"
 
+#include "../vkconfig_core/configurator.h"
+
 #include <cassert>
 
 WidgetSettingBool::WidgetSettingBool(QTreeWidget* tree, QTreeWidgetItem* item, const SettingMetaBool& meta,
@@ -28,10 +30,10 @@ WidgetSettingBool::WidgetSettingBool(QTreeWidget* tree, QTreeWidgetItem* item, c
     : WidgetSettingBase(tree, item), meta(meta), data_set(data_set), field(new QCheckBox(this)) {
     this->field->setText(GetLabel(this->meta).c_str());
     this->field->setFont(this->tree->font());
-    this->field->setToolTip(this->meta.description.c_str());
     this->field->show();
     this->connect(this->field, SIGNAL(clicked()), this, SLOT(OnClicked()));
 
+    this->item->setToolTip(0, this->meta.description.c_str());
     this->item->setSizeHint(0, QSize(0, ITEM_HEIGHT));
     this->tree->setItemWidget(this->item, 0, this);
 
@@ -59,6 +61,10 @@ void WidgetSettingBool::Refresh(RefreshAreas refresh_areas) {
 
 void WidgetSettingBool::OnClicked() {
     this->data().value = this->field->isChecked();
+
+    Configurator& configurator = Configurator::Get();
+
+    ::CheckMessage(configurator.ignored_messages, this->meta, this->data_set);
 
     emit itemChanged();
 }
