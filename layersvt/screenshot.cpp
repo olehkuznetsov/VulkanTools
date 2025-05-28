@@ -67,7 +67,6 @@ VkuLayerSettingSet globalLayerSettingSet = VK_NULL_HANDLE;
 
 // If true, do not capture screenshots. Allows to control the layer at runtime.
 std::atomic_bool pauseCapture(false);
-const char *kSettingPauseCapture = "pause";
 
 enum class ColorSpaceFormat { UNDEFINED, UNORM, SNORM, USCALED, SSCALED, UINT, SINT, SRGB };
 
@@ -159,10 +158,11 @@ class Settings {
     set<int> screenshotFrames;
 };
 
-void updatePauseCapture() {
-    if (vkuHasLayerSetting(globalLayerSettingSet, kSettingPauseCapture)) {
+void updatePauseCapture(VkuLayerSettingSet layerSettingSet) {
+    const char *kSettingPauseCapture = "pause";
+    if (vkuHasLayerSetting(layerSettingSet, kSettingPauseCapture)) {
         bool newPauseCapture = false;
-        vkuGetLayerSettingValue(globalLayerSettingSet, kSettingPauseCapture, newPauseCapture);
+        vkuGetLayerSettingValue(layerSettingSet, kSettingPauseCapture, newPauseCapture);
         std::atomic_store(&pauseCapture, newPauseCapture);
     }
 }
@@ -176,8 +176,6 @@ void Settings::init(VkuLayerSettingSet layerSettingSet) {
     const char *kSettingAllowSkip = "skip";
     const char *kSettingProfile = "profile";
     const char *kSettingScreenshotExtension = "extension";
-
-    updatePauseCapture();
 
     if (vkuHasLayerSetting(layerSettingSet, kSettingScale)) {
         vkuGetLayerSettingValue(layerSettingSet, kSettingScale, scalePercent);
@@ -395,6 +393,8 @@ static void init_screenshot(const VkInstanceCreateInfo *pCreateInfo, const VkAll
                              &globalLayerSettingSet);
 
     settings.init(globalLayerSettingSet);
+
+    updatePauseCapture(globalLayerSettingSet);
 }
 
 void screenshotWriterThreadFunc();
@@ -1524,7 +1524,7 @@ VKAPI_ATTR VkResult VKAPI_CALL GetSwapchainImagesKHR(VkDevice device, VkSwapchai
 
 void screenshotWriterThreadFunc() {
     while (true) {
-        updatePauseCapture();
+        updatePauseCapture(globalLayerSettingSet);
         std::shared_ptr<ScreenshotQueueData> dataToSave;
         {
             PROFILE(std::atomic_load(&pauseCapture) ? "paused" : "Waiting for CPU")
