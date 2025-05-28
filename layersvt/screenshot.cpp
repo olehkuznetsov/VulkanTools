@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <atomic>
 #include <unordered_map>
 #include <iostream>
 #include <algorithm>
@@ -61,6 +62,11 @@ std::condition_variable screenshotSavedCV;
 std::thread screenshotWriterThread;
 bool shutdownScreenshotThread = false;
 bool screenshotThreadStarted = false;
+
+VkuLayerSettingSet globalLayerSettingSet = VK_NULL_HANDLE;
+
+// If true, do not capture screenshots. Allows to control the layer at runtime.
+std::atomic_bool pauseCapture(false);
 
 enum class ColorSpaceFormat { UNDEFINED, UNORM, SNORM, USCALED, SSCALED, UINT, SINT, SRGB };
 
@@ -151,6 +157,15 @@ class Settings {
     // set: list of frames to take screenshots without duplication.
     set<int> screenshotFrames;
 };
+
+void updatePauseCapture(VkuLayerSettingSet layerSettingSet) {
+    const char *kSettingPauseCapture = "pause";
+    if (vkuHasLayerSetting(layerSettingSet, kSettingPauseCapture)) {
+        bool newPauseCapture = false;
+        vkuGetLayerSettingValue(layerSettingSet, kSettingPauseCapture, newPauseCapture);
+        std::atomic_store(&pauseCapture, newPauseCapture);
+    }
+}
 
 void Settings::init(VkuLayerSettingSet layerSettingSet) {
     const char *kSettingsKeyFrames = "frames";
@@ -374,13 +389,12 @@ static DeviceMapStruct *get_device_info(VkDevice dev) {
 }
 
 static void init_screenshot(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator) {
-    VkuLayerSettingSet layerSettingSet = VK_NULL_HANDLE;
     vkuCreateLayerSettingSet("VK_LAYER_LUNARG_screenshot", vkuFindLayerSettingsCreateInfo(pCreateInfo), pAllocator, nullptr,
-                             &layerSettingSet);
+                             &globalLayerSettingSet);
 
-    settings.init(layerSettingSet);
+    settings.init(globalLayerSettingSet);
 
-    vkuDestroyLayerSettingSet(layerSettingSet, pAllocator);
+    updatePauseCapture(globalLayerSettingSet);
 }
 
 void screenshotWriterThreadFunc();
@@ -1510,12 +1524,13 @@ VKAPI_ATTR VkResult VKAPI_CALL GetSwapchainImagesKHR(VkDevice device, VkSwapchai
 
 void screenshotWriterThreadFunc() {
     while (true) {
+        updatePauseCapture(globalLayerSettingSet);
         std::shared_ptr<ScreenshotQueueData> dataToSave;
         {
-            PROFILE("Waiting for CPU")
+            PROFILE(std::atomic_load(&pauseCapture) ? "paused" : "Waiting for CPU")
             std::unique_lock<std::mutex> lock(globalLock);
             if (screenshotsData.empty()) {
-                screenshotQueuedCV.wait(lock, [] { return !screenshotsData.empty() || shutdownScreenshotThread; });
+                screenshotQueuedCV.wait(lock);
             }
             if (shutdownScreenshotThread && screenshotsData.empty()) break;
             if (screenshotsData.empty()) continue;
@@ -1593,8 +1608,11 @@ VKAPI_ATTR VkResult VKAPI_CALL QueuePresentKHR(VkQueue queue, const VkPresentInf
     VkPresentInfoKHR presentInfo = *pPresentInfo;
     static int frameNumber = 0;
     if (settings.isFrameToCapture(frameNumber)) {
-        // If there are 0 swapchains, skip taking the snapshot
-        if (pPresentInfo && pPresentInfo->swapchainCount > 0) {
+        if (std::atomic_load(&pauseCapture)) {
+            // Wake up screenshot thread to check whether we should unpause screenshot recording
+            screenshotQueuedCV.notify_one();
+        } else if (pPresentInfo && pPresentInfo->swapchainCount > 0) {
+            // If there are 0 swapchains, skip taking the snapshot
             std::unique_lock<std::mutex> lock(globalLock);
             while (!settings.allowToSkipFrames) {
                 if (screenshotsData.size() < settings.maxScreenshotQueueSize) break;
