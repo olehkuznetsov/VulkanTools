@@ -159,6 +159,14 @@ class Settings {
     set<int> screenshotFrames;
 };
 
+void updateLayerPausedSetting() {
+    if (vkuHasLayerSetting(globalLayerSettingSet, kSettingPauseCapture)) {
+        bool shouldPauseCapture = false;
+        vkuGetLayerSettingValue(globalLayerSettingSet, kSettingPauseCapture, shouldPauseCapture);
+        std::atomic_store(&pauseCapture, shouldPauseCapture);
+    }
+}
+
 void Settings::init(VkuLayerSettingSet layerSettingSet) {
     const char *kSettingsKeyFrames = "frames";
     const char *kSettingKeyFormat = "format";
@@ -1514,15 +1522,6 @@ VKAPI_ATTR VkResult VKAPI_CALL GetSwapchainImagesKHR(VkDevice device, VkSwapchai
     return result;
 }
 
-void updateLayerPausedSetting() {
-    PROFILE("Update layer.pause setting")
-    if (vkuHasLayerSetting(globalLayerSettingSet, kSettingPauseCapture)) {
-        bool shouldPauseCapture = false;
-        vkuGetLayerSettingValue(globalLayerSettingSet, kSettingPauseCapture, shouldPauseCapture);
-        std::atomic_store(&pauseCapture, shouldPauseCapture);
-    }
-}
-
 void screenshotWriterThreadFunc() {
     while (true) {
         updateLayerPausedSetting();
@@ -1531,7 +1530,8 @@ void screenshotWriterThreadFunc() {
             PROFILE("Waiting for CPU")
             std::unique_lock<std::mutex> lock(globalLock);
             if (screenshotsData.empty()) {
-                screenshotQueuedCV.wait(lock, [] { return !screenshotsData.empty() || shutdownScreenshotThread; });
+                screenshotQueuedCV.wait(
+                    lock, [] { return !screenshotsData.empty() || shutdownScreenshotThread || std::atomic_load(&pauseCapture); });
             }
             if (shutdownScreenshotThread && screenshotsData.empty()) break;
             if (screenshotsData.empty()) continue;
@@ -1608,7 +1608,10 @@ void screenshotWriterThreadFunc() {
 VKAPI_ATTR VkResult VKAPI_CALL QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
     VkPresentInfoKHR presentInfo = *pPresentInfo;
     static int frameNumber = 0;
-    if (!std::atomic_load(&pauseCapture) && settings.isFrameToCapture(frameNumber)) {
+    if (std::atomic_load(&pauseCapture)) {
+        // Wake up screenshot thread to check whether we should unpause screenshot recording
+        screenshotQueuedCV.notify_one();
+    } else if (settings.isFrameToCapture(frameNumber)) {
         // If there are 0 swapchains, skip taking the snapshot
         if (pPresentInfo && pPresentInfo->swapchainCount > 0) {
             std::unique_lock<std::mutex> lock(globalLock);
