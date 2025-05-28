@@ -22,7 +22,6 @@
 #include <vulkan/utility/vk_format_utils.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <assert.h>
 #include <atomic>
 #include <string>
@@ -140,7 +139,7 @@ class Settings {
     bool isProfilingEnabled = true;
 
     // File that signals to host that screenshot recording is paused and write complete.
-    string pauseFileName;
+    std::string pauseFileName;
 
     // Checks if frame needs to be captured
     bool isFrameToCapture(int frame) const;
@@ -1531,7 +1530,7 @@ VKAPI_ATTR VkResult VKAPI_CALL GetSwapchainImagesKHR(VkDevice device, VkSwapchai
 }
 
 void screenshotWriterThreadFunc() {
-    static bool pauseFileRecorded = false;
+    bool pauseFileRecorded = false;
     if (!std::atomic_load(&pauseCapture)) {
         std::remove(settings.pauseFileName.c_str());
     }
