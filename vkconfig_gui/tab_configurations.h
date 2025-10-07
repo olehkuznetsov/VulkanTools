@@ -22,8 +22,9 @@
 
 #include "tab.h"
 #include "settings_tree.h"
-
 #include "item_list.h"
+
+#include "../vkconfig_core/type_generate_settings.h"
 
 #include <QPushButton>
 #include <QAbstractItemView>
@@ -40,12 +41,9 @@ class TabConfigurations : public Tab {
     virtual bool EventFilter(QObject *target, QEvent *event) override;
 
     void OnRenameConfiguration(QListWidgetItem *item);
-    void OnCheckedLoaderMessageTypes(bool checked);
 
     void UpdateUI_Configurations(UpdateUIMode ui_update_mode);
     void UpdateUI_Applications(UpdateUIMode ui_update_mode);
-    void UpdateUI_LoaderMessages();
-    void UpdateUI_Drivers(UpdateUIMode ui_update_mode);
     void UpdateUI_Layers(UpdateUIMode ui_update_mode);
     void UpdateUI_Settings(UpdateUIMode ui_update_mode);
 
@@ -58,18 +56,7 @@ class TabConfigurations : public Tab {
     void on_configurations_executable_remove_pressed();
 
     void on_configurations_list_toggled(bool checked);
-    void on_configurations_layers_ordering_toggled(bool checked);
-    void on_configurations_driver_toggled(bool checked);
-    void on_configurations_driver_name_currentIndexChanged(int index);
-    void on_configurations_loader_messages_toggled(bool checked);
     void on_configurations_layers_settings_toggled(bool checked);
-
-    void on_configuration_loader_errors_toggled(bool checked);
-    void on_configuration_loader_warns_toggled(bool checked);
-    void on_configuration_loader_infos_toggled(bool checked);
-    void on_configuration_loader_debug_toggled(bool checked);
-    void on_configuration_loader_layers_toggled(bool checked);
-    void on_configuration_loader_drivers_toggled(bool checked);
 
     void on_configurations_list_itemDoubleClicked(QListWidgetItem *item);
     void on_configurations_list_itemChanged(QListWidgetItem *item);
@@ -96,9 +83,8 @@ class TabConfigurations : public Tab {
     void OnContextMenuResetOneClicked(ListItem *item);
     void OnContextMenuResetAllClicked(ListItem *item);
     void OnContextMenuExportConfigsClicked(ListItem *item);
-    void OnContextMenuExportEnvVariablesBashClicked(ListItem *item);
-    void OnContextMenuExportEnvVariablesCMDClicked(ListItem *item);
-    void OnContextMenuExportSettingsClicked(ListItem *item);
 
     void UpdatePerExecutableConfigurations();
+
+    void GenerateClicked(GenerateSettingsMode mode);
 };

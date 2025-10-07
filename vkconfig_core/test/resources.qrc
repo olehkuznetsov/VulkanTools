@@ -10,6 +10,22 @@
         <file>layers_settings.txt</file>
     </qresource>
 
+    <qresource prefix="/test/generated">
+        <file alias="vk_layer_settings.html">./generated/vk_layer_settings.html</file>
+        <file alias="vk_layer_settings.md">./generated/vk_layer_settings.md</file>
+        <file alias="vk_layer_settings.txt">./generated/vk_layer_settings.txt</file>
+        <file alias="vk_layer_settings.bat">./generated/vk_layer_settings.bat</file>
+        <file alias="vk_layer_settings.sh">./generated/vk_layer_settings.sh</file>
+        <file alias="vulkan_layer_settings.hpp">./generated/vulkan_layer_settings.code</file>
+
+        <file alias="VK_LAYER_LUNARG_reference_1_2_1.html">./generated/VK_LAYER_LUNARG_reference_1_2_1.html</file>
+        <file alias="VK_LAYER_LUNARG_reference_1_2_1.md">./generated/VK_LAYER_LUNARG_reference_1_2_1.md</file>
+        <file alias="VK_LAYER_LUNARG_reference_1_2_1.txt">./generated/VK_LAYER_LUNARG_reference_1_2_1.txt</file>
+        <file alias="VK_LAYER_LUNARG_reference_1_2_1.bat">./generated/VK_LAYER_LUNARG_reference_1_2_1.bat</file>
+        <file alias="VK_LAYER_LUNARG_reference_1_2_1.sh">./generated/VK_LAYER_LUNARG_reference_1_2_1.sh</file>
+        <file alias="VK_LAYER_LUNARG_reference_1_2_1.hpp">./generated/VK_LAYER_LUNARG_reference_1_2_1.code</file>
+    </qresource>
+
     <qresource prefix="/sdk">
         <file alias="VkLayer_api_dump.json">./sdk/VkLayer_api_dump.json</file>
         <file alias="VkLayer_gfxreconstruct.json">./sdk/VkLayer_gfxreconstruct.json</file>
@@ -48,9 +64,7 @@
         <file alias="Crash Diagnostic.json">../configurations/3.0.0/Crash Diagnostic.json</file>
         <file alias="Disable All Vulkan Layers.json">../configurations/3.0.0/Disable All Vulkan Layers.json</file>
         <file alias="Frame Capture.json">../configurations/3.0.0/Frame Capture.json</file>
-        <file alias="Log Loader Messages.json">../configurations/3.0.0/Log Loader Messages.json</file>
         <file alias="Portability.json">../configurations/3.0.0/Portability.json</file>
-        <file alias="Synchronization.json">../configurations/3.0.0/Synchronization.json</file>
         <file alias="Validation.json">../configurations/3.0.0/Validation.json</file>
     </qresource>
 

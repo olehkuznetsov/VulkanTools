@@ -22,6 +22,7 @@
 #pragma once
 
 #include "path.h"
+#include "type_generate_settings.h"
 
 #include <string>
 #include <vector>
@@ -34,6 +35,7 @@ enum CommandType {
     COMMAND_RESET,
     COMMAND_LAYERS,
     COMMAND_LOADER,
+    COMMAND_SETTINGS,
     COMMAND_DOC
 };
 
@@ -60,17 +62,42 @@ enum CommandDocArg { COMMAND_DOC_NONE = 0, COMMAND_DOC_HTML, COMMAND_DOC_MARKDOW
 
 enum CommandResetArg { COMMAND_RESET_NONE = 0, COMMAND_RESET_SOFT, COMMAND_RESET_HARD };
 
+enum CommandSettingsArg {
+    COMMAND_SETTINGS_NONE = 0,
+    COMMAND_SETTINGS_GENERATE,
+    COMMAND_SETTINGS_CONFIG,
+    COMMAND_SETTINGS_LAYER,
+    COMMAND_SETTINGS_OUTPUT,
+    COMMAND_SETTINGS_OUTPUT_DIR,
+    COMMAND_SETTINGS_DRY_RUN,
+
+    COMMAND_SETTINGS_FIRST = COMMAND_SETTINGS_NONE,
+    COMMAND_SETTINGS_LAST = COMMAND_SETTINGS_DRY_RUN,
+};
+
+enum { COMMAND_SETTINGS_COUNT = COMMAND_SETTINGS_LAST - COMMAND_SETTINGS_FIRST + 1 };
+
 enum CommandError {
     ERROR_NONE = 0,
-    ERROR_INVALID_COMMAND_USAGE,
+    ERROR_INVALID_COMMAND,
     ERROR_INVALID_COMMAND_ARGUMENT,
     ERROR_TOO_MANY_COMMAND_ARGUMENTS,
     ERROR_MISSING_COMMAND_ARGUMENT,
-    ERROR_UNKNOWN_ARGUMENT,
     ERROR_FILE_NOTFOUND
 };
 
-enum HelpType { HELP_NONE = 0, HELP_DEFAULT, HELP_HELP, HELP_VERSION, HELP_LAYERS, HELP_LOADER, HELP_GUI, HELP_DOC, HELP_RESET };
+enum HelpType {
+    HELP_NONE = 0,
+    HELP_DEFAULT,
+    HELP_HELP,
+    HELP_VERSION,
+    HELP_LAYERS,
+    HELP_LOADER,
+    HELP_SETTINGS,
+    HELP_GUI,
+    HELP_DOC,
+    HELP_RESET
+};
 
 class CommandLine {
    public:
@@ -79,15 +106,19 @@ class CommandLine {
     void usage() const;
     void version() const;
 
+    Path GetInputPath() const;
+    Path GetOutputPath() const;
+
     const CommandType& command;
     const CommandResetArg& command_reset_arg;
     const CommandLayersArg& command_layers_arg;
     const CommandLoaderArg& command_loader_arg;
-    const std::string& layers_configuration_name;
-    const Path& layers_configuration_path;
     const CommandDocArg& command_doc_arg;
-    const std::string& doc_layer_name;
-    const std::string& doc_out_dir;
+    const GenerateSettingsMode& generate_settings_mode;
+    const std::string& selected_layer_name;
+    const std::string& selected_configuration_name;
+    const bool& dry_run;
+    const HelpType& help;
 
     const CommandError& error;
     const std::vector<std::string>& error_args;
@@ -97,17 +128,20 @@ class CommandLine {
     CommandLine& operator=(const CommandLine&) = delete;
 
     CommandType _command = COMMAND_SHOW_USAGE;
-    CommandResetArg _command_reset_arg = COMMAND_RESET_NONE;
+    CommandResetArg _command_reset_arg = COMMAND_RESET_SOFT;
     CommandLayersArg _command_layers_arg = COMMAND_LAYERS_NONE;
     CommandLoaderArg _command_loader_arg = COMMAND_LOADER_NONE;
-    std::string _layers_configuration_name;
-    Path _layers_configuration_path;
     CommandDocArg _command_doc_arg = COMMAND_DOC_NONE;
-    std::string _doc_layer_name;
-    std::string _doc_out_dir;
+    GenerateSettingsMode _generate_settings_mode = GENERATE_SETTINGS_TXT;
+    std::string _selected_layer_name = "default";
+    std::string _selected_configuration_name = "default";
+    Path _input_path;
+    Path _output_path;
+    Path _output_dir;
+    bool _dry_run = false;
 
     CommandError _error = ERROR_NONE;
     std::vector<std::string> _error_args;
 
-    HelpType _help = HELP_NONE;
+    HelpType _help = HELP_DEFAULT;
 };

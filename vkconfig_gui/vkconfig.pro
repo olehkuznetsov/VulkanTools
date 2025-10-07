@@ -38,6 +38,7 @@ SOURCES += \
     ../vkconfig_core/doc.cpp \
     ../vkconfig_core/executable.cpp \
     ../vkconfig_core/executable_manager.cpp \
+    ../vkconfig_core/generate_settings_files.cpp \
     ../vkconfig_core/header.cpp \
     ../vkconfig_core/json.cpp \
     ../vkconfig_core/json_validator.cpp \
@@ -61,7 +62,9 @@ SOURCES += \
     ../vkconfig_core/type_button.cpp \
     ../vkconfig_core/type_configurator_mode.cpp \
     ../vkconfig_core/type_diagnostic_mode.cpp \
+    ../vkconfig_core/type_driver_mode.cpp \
     ../vkconfig_core/type_executable_mode.cpp \
+    ../vkconfig_core/type_generate_settings.cpp \
     ../vkconfig_core/type_hide_message.cpp \
     ../vkconfig_core/type_layer_builtin.cpp \
     ../vkconfig_core/type_layer_control.cpp \
@@ -101,6 +104,7 @@ SOURCES += \
     widget_setting_list.cpp \
     item_tree.cpp \
     item_list.cpp \
+    item_list_device.cpp \
     main.cpp \
     mainwindow.cpp \
     tab.cpp \
@@ -128,6 +132,7 @@ HEADERS += \
     ../vkconfig_core/doc.h \
     ../vkconfig_core/executable.h \
     ../vkconfig_core/executable_manager.h \
+    ../vkconfig_core/generate_settings_files.h \
     ../vkconfig_core/header.h \
     ../vkconfig_core/json.h \
     ../vkconfig_core/json_validator.h \
@@ -151,7 +156,9 @@ HEADERS += \
     ../vkconfig_core/type_button.h \
     ../vkconfig_core/type_configurator_mode.h \
     ../vkconfig_core/type_diagnostic_mode.h \
+    ../vkconfig_core/type_driver_mode.h \
     ../vkconfig_core/type_executable_mode.h \
+    ../vkconfig_core/type_generate_settings.h \
     ../vkconfig_core/type_hide_message.h \
     ../vkconfig_core/type_layer_builtin.h \
     ../vkconfig_core/type_layer_control.h \
@@ -191,6 +198,7 @@ HEADERS += \
     widget_setting_list.h \
     item_tree.h \
     item_list.h \
+    item_list_device.h \
     mainwindow.h \
     tab.h \
     tab_about.h \

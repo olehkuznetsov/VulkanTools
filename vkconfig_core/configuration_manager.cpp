@@ -89,10 +89,12 @@ bool ConfigurationManager::Empty() const { return this->available_configurations
 
 std::size_t ConfigurationManager::Size() const { return this->available_configurations.size(); }
 
-void ConfigurationManager::LoadAllConfigurations(const LayerManager &layers) {
+void ConfigurationManager::LoadAllConfigurations(const LayerManager &layers, ConfiguratorMode mode) {
     this->available_configurations.clear();
 
-    this->LoadConfigurationsPath(layers);
+    if (RequireLoading(mode)) {
+        this->LoadConfigurationsPath(layers);
+    }
 
     // If built-in configurations were updated, replace the stored configuration
     this->LoadDefaultConfigurations(layers);
@@ -114,14 +116,6 @@ void ConfigurationManager::LoadDefaultConfigurations(const LayerManager &layers)
 
         if (!IsPlatformSupported(configuration.platform_flags)) {
             continue;
-        }
-
-        if (VKC_PLATFORM == PLATFORM_WINDOWS_ARM) {
-            if (configuration.key == "Frame Capture") {
-                continue;
-            } else if (configuration.key == "Crash Diagnostic") {
-                continue;
-            }
         }
 
         OrderParameter(configuration.parameters, layers);

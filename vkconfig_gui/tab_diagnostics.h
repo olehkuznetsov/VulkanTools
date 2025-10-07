@@ -45,6 +45,7 @@ class TabDiagnostics : public Tab {
     void on_mode_options_changed(int index);
     void on_export_folder();
     void on_export_file();
+
     void on_focus_search();
     void on_search_textEdited(const QString& text);
     void on_search_clear_pressed();
@@ -56,6 +57,14 @@ class TabDiagnostics : public Tab {
     void on_search_case_activated();
     void on_search_whole_activated();
     void on_search_regex_activated();
+
+    void on_diagnostic_loader_messages_toggled(bool checked);
+    void on_diagnostic_loader_errors_toggled(bool checked);
+    void on_diagnostic_loader_warns_toggled(bool checked);
+    void on_diagnostic_loader_infos_toggled(bool checked);
+    void on_diagnostic_loader_debug_toggled(bool checked);
+    void on_diagnostic_loader_layers_toggled(bool checked);
+    void on_diagnostic_loader_drivers_toggled(bool checked);
 
     void standardOutputAvailable();                                 // stdout output is available
     void errorOutputAvailable();                                    // Layeroutput is available
@@ -69,6 +78,8 @@ class TabDiagnostics : public Tab {
     bool search_case = false;
     bool search_whole = false;
     bool search_regex = false;
+
+    void OnCheckedLoaderMessageTypes(bool checked);
 
     std::string BuildStatus(DiagnosticMode selected_mode, std::size_t mode_index);
     void UpdateStatus();

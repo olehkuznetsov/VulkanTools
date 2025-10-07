@@ -969,6 +969,16 @@ class ApiDumpInstance {
     VkIndirectExecutionSetInfoTypeEXT getIndirectExecutionSetInfoType() { return this->indirectExecutionSetInfoType; }
     void setIndirectCommandsLayoutToken(VkIndirectCommandsTokenTypeEXT type) { this->indirectCommandsLayoutToken = type; }
     VkIndirectCommandsTokenTypeEXT getIndirectCommandsLayoutToken() { return this->indirectCommandsLayoutToken; }
+    void setSpsMaxSubLayersMinus1(uint8_t sps_max_sub_layers_minus1) {
+        this->sps_max_sub_layers_minus1 = sps_max_sub_layers_minus1;
+    }
+    uint8_t getSpsMaxSubLayersMinus1() { return sps_max_sub_layers_minus1; }
+    void setVpsMaxSubLayersMinus1(uint8_t vps_max_sub_layers_minus1) {
+        this->vps_max_sub_layers_minus1 = vps_max_sub_layers_minus1;
+    }
+    uint8_t getVpsMaxSubLayersMinus1() { return vps_max_sub_layers_minus1; }
+    void setIsInVps(bool is_in_vps) { this->is_in_vps = is_in_vps; }
+    bool getIsInVps() { return is_in_vps; }
 
     std::chrono::microseconds current_time_since_start() {
         std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
@@ -1050,6 +1060,15 @@ class ApiDumpInstance {
 
     // Storage for the VkIndirectCommandsTokenDataEXT union to know which is the active element
     VkIndirectCommandsTokenTypeEXT indirectCommandsLayoutToken;
+
+    // Storage for StdVideoH265HrdParameters's array length for pSubLayerHrdParametersNal and pSubLayerHrdParametersVcl
+    uint8_t sps_max_sub_layers_minus1;
+    uint8_t vps_max_sub_layers_minus1;
+
+    // True if StdVideoH265HrdParameters is currently in StdVideoH265VideoParameterSet, false if it is in
+    // StdVideoH265SequenceParameterSetVui. Needed to determine whether to use vps_max_sub_layers_minus1 or
+    // sps_max_sub_layers_minus1
+    bool is_in_vps;
 };
 
 enum class OutputConstruct {
@@ -1497,7 +1516,7 @@ void dump_pointer_array(const T *array, size_t len, const ApiDumpSettings &setti
         stream << "[" << i << "]";
         std::string indexName = stream.str();
         dump_element(array[i], settings, element_type, indexName.c_str(), indents + (Format == ApiDumpFormat::Json ? 2 : 1),
-                     nullptr);
+                     array + i);
         if constexpr (Format == ApiDumpFormat::Json) {
             if (i < len - 1) settings.stream() << ',';
             settings.stream() << "\n";
@@ -1522,7 +1541,7 @@ void dump_double_pointer_array(const T *const *array, size_t len, const ApiDumpS
         stream << "[" << i << "]";
         std::string indexName = stream.str();
         dump_pointer<Format>(array[i], settings, element_type, indexName.c_str(), indents + (Format == ApiDumpFormat::Json ? 2 : 1),
-                     dump_element);
+                             dump_element);
         if constexpr (Format == ApiDumpFormat::Json) {
             if (i < len - 1) settings.stream() << ',';
             settings.stream() << "\n";

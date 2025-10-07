@@ -90,29 +90,8 @@ TabConfigurations::TabConfigurations(MainWindow &window, std::shared_ptr<Ui::Mai
                   SLOT(on_configurations_executable_remove_pressed()));
 
     this->connect(this->ui->configurations_group_box_list, SIGNAL(toggled(bool)), this, SLOT(on_configurations_list_toggled(bool)));
-    this->connect(this->ui->configurations_group_box_layers, SIGNAL(toggled(bool)), this,
-                  SLOT(on_configurations_layers_ordering_toggled(bool)));
-    this->connect(this->ui->configurations_group_box_driver, SIGNAL(toggled(bool)), this,
-                  SLOT(on_configurations_driver_toggled(bool)));
-    this->connect(this->ui->configuration_driver_name, SIGNAL(currentIndexChanged(int)), this,
-                  SLOT(on_configurations_driver_name_currentIndexChanged(int)));
-    this->connect(this->ui->configurations_group_box_loader, SIGNAL(toggled(bool)), this,
-                  SLOT(on_configurations_loader_messages_toggled(bool)));
     this->connect(this->ui->configurations_group_box_settings, SIGNAL(toggled(bool)), this,
                   SLOT(on_configurations_layers_settings_toggled(bool)));
-
-    this->connect(this->ui->configuration_loader_errors, SIGNAL(toggled(bool)), this,
-                  SLOT(on_configuration_loader_errors_toggled(bool)));
-    this->connect(this->ui->configuration_loader_warns, SIGNAL(toggled(bool)), this,
-                  SLOT(on_configuration_loader_warns_toggled(bool)));
-    this->connect(this->ui->configuration_loader_infos, SIGNAL(toggled(bool)), this,
-                  SLOT(on_configuration_loader_infos_toggled(bool)));
-    this->connect(this->ui->configuration_loader_debug, SIGNAL(toggled(bool)), this,
-                  SLOT(on_configuration_loader_debug_toggled(bool)));
-    this->connect(this->ui->configuration_loader_layers, SIGNAL(toggled(bool)), this,
-                  SLOT(on_configuration_loader_layers_toggled(bool)));
-    this->connect(this->ui->configuration_loader_drivers, SIGNAL(toggled(bool)), this,
-                  SLOT(on_configuration_loader_drivers_toggled(bool)));
 
     this->connect(this->ui->configurations_list, SIGNAL(itemChanged(QListWidgetItem *)), this,
                   SLOT(on_configurations_list_itemChanged(QListWidgetItem *)));
@@ -155,12 +134,6 @@ TabConfigurations::TabConfigurations(MainWindow &window, std::shared_ptr<Ui::Mai
     ExecutableScope current_scope = configurator.GetExecutableScope();
     this->ui->configurations_executable_scope->setCurrentIndex(current_scope);
     this->ui->configurations_executable_scope->blockSignals(false);
-
-    if (configurator.vulkan_system_info.loaderVersion < Version(1, 4, 323)) {
-        this->ui->configurations_group_box_driver->setEnabled(false);
-        this->ui->configurations_group_box_driver->setToolTip(
-            "Forced Vulkan Physical Device requires Vulkan Loader 1.4.323 or newer");
-    }
 
     this->advanced_mode = new ResizeButton(this->ui->configurations_group_box_layers, 0);
     this->advanced_mode->setMinimumSize(24, 24);
@@ -211,22 +184,6 @@ void TabConfigurations::UpdateUI_Configurations(UpdateUIMode mode) {
         if (configurator.GetActiveConfiguration() == &configuration) {
             item->setIcon(::Get(configurator.current_theme_mode, ::ICON_SYSTEM_ON));
             item->setToolTip(format("Using the '%s' configuration with Vulkan executables", configuration.key.c_str()).c_str());
-            ui->configurations_group_box_layers->blockSignals(true);
-            ui->configurations_group_box_layers->setChecked(configuration.override_layers);
-            ui->configurations_group_box_layers->blockSignals(false);
-            ui->configurations_group_box_loader->blockSignals(true);
-            ui->configurations_group_box_loader->setChecked(configuration.override_loader);
-            if (configurator.vulkan_system_info.loaderVersion <= Version(1, 4, 304)) {
-                ui->configurations_group_box_loader->setCheckable(configuration.override_layers);
-                ui->configurations_group_box_loader->setEnabled(configuration.override_layers);
-                if (configuration.override_layers) {
-                    ui->configurations_group_box_loader->setToolTip("Configure Loader Messages");
-                } else {
-                    ui->configurations_group_box_loader->setToolTip(
-                        "Due to a Vulkan Loader 304 bug, layers must be overridden for loader messages to be enabled.");
-                }
-            }
-            ui->configurations_group_box_loader->blockSignals(false);
             current_row = static_cast<int>(i);
         } else if (has_missing_layer) {
             item->setIcon(::Get(configurator.current_theme_mode, ::ICON_SYSTEM_INVALID));
@@ -293,59 +250,6 @@ void TabConfigurations::UpdateUI_Applications(UpdateUIMode ui_update_mode) {
     }
 
     this->ui->configurations_executable_list->blockSignals(false);
-}
-
-void TabConfigurations::UpdateUI_Drivers(UpdateUIMode ui_update_mode) {
-    const Configurator &configurator = Configurator::Get();
-
-    const Configuration *configuration = configurator.GetActiveConfiguration();
-
-    this->ui->configurations_group_box_driver->setChecked(configuration->override_driver);
-
-    this->ui->configuration_driver_name->blockSignals(true);
-    this->ui->configuration_driver_name->clear();
-    for (std::size_t i = 0, n = configurator.vulkan_system_info.physicalDevices.size(); i < n; ++i) {
-        this->ui->configuration_driver_name->addItem(configurator.vulkan_system_info.physicalDevices[i].deviceName.c_str());
-    }
-    this->ui->configuration_driver_name->setCurrentIndex(configurator.GetActiveDeviceIndex());
-    this->ui->configuration_driver_name->blockSignals(false);
-}
-
-void TabConfigurations::UpdateUI_LoaderMessages() {
-    const Configurator &configurator = Configurator::Get();
-
-    const Configuration *configuration = configurator.GetActiveConfiguration();
-    if (configuration != nullptr) {
-        const bool enabled =
-            configurator.vulkan_system_info.loaderVersion <= Version(1, 4, 304) ? configuration->override_layers : true;
-
-        ui->configuration_loader_errors->blockSignals(true);
-        ui->configuration_loader_errors->setChecked(configuration->loader_log_messages_flags & GetBit(LOG_ERROR));
-        ui->configuration_loader_errors->setEnabled(enabled);
-        ui->configuration_loader_errors->blockSignals(false);
-        ui->configuration_loader_warns->blockSignals(true);
-        ui->configuration_loader_warns->setChecked(configuration->loader_log_messages_flags & GetBit(LOG_WARN));
-        ui->configuration_loader_warns->setEnabled(enabled);
-        ui->configuration_loader_warns->blockSignals(false);
-        ui->configuration_loader_infos->blockSignals(true);
-        ui->configuration_loader_infos->setChecked(configuration->loader_log_messages_flags & GetBit(LOG_INFO));
-        ui->configuration_loader_infos->setEnabled(enabled);
-        ui->configuration_loader_infos->blockSignals(false);
-        ui->configuration_loader_debug->blockSignals(true);
-        ui->configuration_loader_debug->setChecked(configuration->loader_log_messages_flags & GetBit(LOG_DEBUG));
-        ui->configuration_loader_debug->setEnabled(enabled);
-        ui->configuration_loader_debug->blockSignals(false);
-        ui->configuration_loader_layers->blockSignals(true);
-        ui->configuration_loader_layers->setChecked(configuration->loader_log_messages_flags & GetBit(LOG_LAYER));
-        ui->configuration_loader_layers->setEnabled(enabled);
-        ui->configuration_loader_layers->blockSignals(false);
-        ui->configuration_loader_drivers->blockSignals(true);
-        ui->configuration_loader_drivers->setChecked(configuration->loader_log_messages_flags & GetBit(LOG_DRIVER));
-        ui->configuration_loader_drivers->setEnabled(enabled);
-        ui->configuration_loader_drivers->blockSignals(false);
-    }
-
-    this->ui->configurations_group_box_loader->setEnabled(configurator.HasEnabledUI(ENABLE_UI_LOADER));
 }
 
 void TabConfigurations::UpdateUI_Layers(UpdateUIMode mode) {
@@ -431,8 +335,6 @@ void TabConfigurations::UpdateUI_Settings(UpdateUIMode mode) {
 void TabConfigurations::UpdateUI(UpdateUIMode ui_update_mode) {
     this->UpdateUI_Configurations(ui_update_mode);
     this->UpdateUI_Applications(ui_update_mode);
-    this->UpdateUI_Drivers(ui_update_mode);
-    this->UpdateUI_LoaderMessages();
     this->UpdateUI_Layers(ui_update_mode);
     this->UpdateUI_Settings(ui_update_mode);
 
@@ -549,9 +451,13 @@ bool TabConfigurations::EventFilter(QObject *target, QEvent *event) {
             action_new->setEnabled(true);
             menu.addAction(action_new);
 
-            QAction *action_import = new QAction("Import a new Configuration...", nullptr);
+            QAction *action_import = new QAction("Import a Configuration file...", nullptr);
             action_import->setEnabled(true);
             menu.addAction(action_import);
+
+            QAction *action_export_config = new QAction("Export the Configuration file...", nullptr);
+            action_export_config->setEnabled(item != nullptr);
+            menu.addAction(action_export_config);
 
             menu.addSeparator();
 
@@ -569,6 +475,12 @@ bool TabConfigurations::EventFilter(QObject *target, QEvent *event) {
 
             menu.addSeparator();
 
+            QAction *action_external_settings = new QAction("Use External vk_layer_settings.txt file...", nullptr);
+            action_external_settings->setEnabled(item != nullptr);
+            menu.addAction(action_external_settings);
+
+            menu.addSeparator();
+
             QAction *action_reset_one = new QAction("Reset the Default Configuration", nullptr);
             action_reset_one->setEnabled(configurator.configurations.IsDefaultConfiguration(name));
             action_reset_one->setToolTip("Reset the configuration, discarding all changes of this configuration.");
@@ -581,27 +493,39 @@ bool TabConfigurations::EventFilter(QObject *target, QEvent *event) {
 
             menu.addSeparator();
 
-            QAction *action_export_config = new QAction("Export the Configuration...", nullptr);
-            action_export_config->setEnabled(item != nullptr);
-            menu.addAction(action_export_config);
+            if (!name.empty()) {
+                name = format(" '%s'", name.c_str());
+            }
 
-            QAction *action_export_settings = new QAction("Export the Layers Settings...", nullptr);
+            QAction *action_export_html = new QAction(
+                format("Generate%s configuration %s...", name.c_str(), GetLabel(GENERATE_SETTINGS_HTML)).c_str(), nullptr);
+            action_export_html->setEnabled(item != nullptr);
+            menu.addAction(action_export_html);
+
+            QAction *action_export_markdown = new QAction(
+                format("Generate%s configuration %s...", name.c_str(), GetLabel(GENERATE_SETTINGS_MARKDOWN)).c_str(), nullptr);
+            action_export_markdown->setEnabled(item != nullptr);
+            menu.addAction(action_export_markdown);
+
+            QAction *action_export_settings = new QAction(
+                format("Generate%s configuration %s...", name.c_str(), GetLabel(GENERATE_SETTINGS_TXT)).c_str(), nullptr);
             action_export_settings->setEnabled(item != nullptr);
             menu.addAction(action_export_settings);
 
-            QAction *action_export_env_variables_bash_script = new QAction("Export the Bash script...", nullptr);
+            QAction *action_export_env_variables_bash_script = new QAction(
+                format("Generate%s configuration %s...", name.c_str(), GetLabel(GENERATE_SETTINGS_BASH)).c_str(), nullptr);
             action_export_env_variables_bash_script->setEnabled(item != nullptr);
             menu.addAction(action_export_env_variables_bash_script);
 
-            QAction *action_export_env_variables_cmd_script = new QAction("Export the Command Prompt script...", nullptr);
+            QAction *action_export_env_variables_cmd_script = new QAction(
+                format("Generate%s configuration %s...", name.c_str(), GetLabel(GENERATE_SETTINGS_CMD)).c_str(), nullptr);
             action_export_env_variables_cmd_script->setEnabled(item != nullptr);
             menu.addAction(action_export_env_variables_cmd_script);
 
-            menu.addSeparator();
-
-            QAction *action_external_settings = new QAction("Use External Layers Settings file...", nullptr);
-            action_external_settings->setEnabled(item != nullptr);
-            menu.addAction(action_external_settings);
+            QAction *action_export_extension_code = new QAction(
+                format("Generate%s configuration %s...", name.c_str(), GetLabel(GENERATE_SETTINGS_HPP)).c_str(), nullptr);
+            action_export_extension_code->setEnabled(item != nullptr);
+            menu.addAction(action_export_extension_code);
 
             QPoint point(right_click->globalX(), right_click->globalY());
             QAction *action = menu.exec(point);
@@ -623,11 +547,17 @@ bool TabConfigurations::EventFilter(QObject *target, QEvent *event) {
             } else if (action == action_export_config) {
                 this->OnContextMenuExportConfigsClicked(item);
             } else if (action == action_export_env_variables_bash_script) {
-                this->OnContextMenuExportEnvVariablesBashClicked(item);
+                this->GenerateClicked(GENERATE_SETTINGS_BASH);
             } else if (action == action_export_env_variables_cmd_script) {
-                this->OnContextMenuExportEnvVariablesCMDClicked(item);
+                this->GenerateClicked(GENERATE_SETTINGS_CMD);
+            } else if (action == action_export_extension_code) {
+                this->GenerateClicked(GENERATE_SETTINGS_HPP);
             } else if (action == action_export_settings) {
-                this->OnContextMenuExportSettingsClicked(item);
+                this->GenerateClicked(GENERATE_SETTINGS_TXT);
+            } else if (action == action_export_markdown) {
+                this->GenerateClicked(GENERATE_SETTINGS_MARKDOWN);
+            } else if (action == action_export_html) {
+                this->GenerateClicked(GENERATE_SETTINGS_HTML);
             } else if (action == action_external_settings) {
                 this->on_configuration_settings_file_search_pressed();
             }
@@ -660,7 +590,44 @@ bool TabConfigurations::EventFilter(QObject *target, QEvent *event) {
                 QAction *visit_layer_website_action = new QAction("Visit the Layer Website...", nullptr);
                 visit_layer_website_action->setEnabled(layer != nullptr ? !layer->url.Empty() : false);
                 menu.addAction(visit_layer_website_action);
+                /*
+                                menu.addSeparator();
 
+                                std::string name;
+                                if (layer != nullptr) {
+                                    name = format(" '%s'", layer->key.c_str());
+                                }
+
+                                QAction *action_export_html = new QAction(
+                                    format("Generate%s layer settings %s ...", name.c_str(),
+                   GetLabel(GENERATE_SETTINGS_HTML)).c_str(), nullptr); action_export_html->setEnabled(layer != nullptr);
+                                menu.addAction(action_export_html);
+
+                                QAction *action_export_markdown = new QAction(
+                                    format("Generate%s layer settings %s...", name.c_str(),
+                   GetLabel(GENERATE_SETTINGS_MARKDOWN)).c_str(), nullptr); action_export_markdown->setEnabled(layer != nullptr);
+                                menu.addAction(action_export_markdown);
+
+                                QAction *action_export_settings = new QAction(
+                                    format("Generate%s layer settings %s...", name.c_str(),
+                   GetLabel(GENERATE_SETTINGS_TXT)).c_str(), nullptr); action_export_settings->setEnabled(layer != nullptr);
+                                menu.addAction(action_export_settings);
+
+                                QAction *action_export_env_variables_bash_script = new QAction(
+                                    format("Generate%s layer settings %s...", name.c_str(),
+                   GetLabel(GENERATE_SETTINGS_BASH)).c_str(), nullptr); action_export_env_variables_bash_script->setEnabled(layer !=
+                   nullptr); menu.addAction(action_export_env_variables_bash_script);
+
+                                QAction *action_export_env_variables_cmd_script = new QAction(
+                                    format("Generate%s layer settings %s...", name.c_str(),
+                   GetLabel(GENERATE_SETTINGS_CMD)).c_str(), nullptr); action_export_env_variables_cmd_script->setEnabled(layer !=
+                   nullptr); menu.addAction(action_export_env_variables_cmd_script);
+
+                                QAction *action_export_extension_code = new QAction(
+                                    format("Generate%s layer settings %s...", name.c_str(),
+                   GetLabel(GENERATE_SETTINGS_HPP)).c_str(), nullptr); action_export_extension_code->setEnabled(layer != nullptr);
+                                menu.addAction(action_export_extension_code);
+                */
                 QPoint point(right_click->globalX(), right_click->globalY());
                 QAction *action = menu.exec(point);
 
@@ -689,14 +656,28 @@ bool TabConfigurations::EventFilter(QObject *target, QEvent *event) {
                     QDesktopServices::openUrl(QUrl(layer->url.AbsolutePath(false).c_str()));
                 } else if (action == export_html_action) {
                     const std::string path = format("%s/%s.html", AbsolutePath(Path::APPDATA).c_str(), layer->key.c_str());
-                    ExportHtmlDoc(*layer, path);
+                    ExportHtmlDoc(configurator, layer, path);
                     std::string url = "file:///" + path;
                     QDesktopServices::openUrl(QUrl(url.c_str()));
                 } else if (action == export_markdown_action) {
                     const std::string path = format("%s/%s.md", AbsolutePath(Path::APPDATA).c_str(), layer->key.c_str());
-                    ExportMarkdownDoc(*layer, path);
+                    ExportMarkdownDoc(configurator, layer, path);
                     QDesktopServices::openUrl(QUrl(("file:///" + path).c_str()));
                 }
+                /*
+                else if (action == action_export_html) {
+                    this->GenerateClicked(GENERATE_SETTINGS_HTML);
+                } else if (action == action_export_markdown) {
+                    this->GenerateClicked(GENERATE_SETTINGS_MARKDOWN);
+                } else if (action == action_export_settings) {
+                    this->GenerateClicked(GENERATE_SETTINGS_TXT);
+                } else if (action == action_export_env_variables_bash_script) {
+                    this->GenerateClicked(GENERATE_SETTINGS_BASH);
+                } else if (action == action_export_env_variables_cmd_script) {
+                    this->GenerateClicked(GENERATE_SETTINGS_CMD);
+                } else if (action == action_export_extension_code) {
+                    this->GenerateClicked(GENERATE_SETTINGS_HPP);
+                }*/
             }
         }
     } else if (target == this->ui->configurations_settings) {
@@ -794,7 +775,7 @@ bool TabConfigurations::EventFilter(QObject *target, QEvent *event) {
                     alert.exec();
                 } else if (action == export_html_action) {
                     const std::string path = format("%s/%s.html", AbsolutePath(Path::APPDATA).c_str(), layer->key.c_str());
-                    ExportHtmlDoc(*layer, path);
+                    ExportHtmlDoc(configurator, layer, path);
 
                     std::string url = ConvertStandardSeparators(format("file:///%s#%s-detailed", path.c_str(), item->key.c_str()));
                     QDesktopServices::openUrl(QUrl(url.c_str()));
@@ -897,7 +878,6 @@ void TabConfigurations::OnContextMenuNewClicked(ListItem *item) {
     configurator.Override(OVERRIDE_AREA_ALL);
 
     this->UpdateUI_Configurations(UPDATE_REBUILD_UI);
-    this->UpdateUI_LoaderMessages();
     this->UpdateUI_Layers(UPDATE_REBUILD_UI);
     this->UpdateUI_Settings(UPDATE_REBUILD_UI);
 }
@@ -924,7 +904,6 @@ void TabConfigurations::OnContextMenuImportClicked(ListItem *item) {
         configurator.Override(OVERRIDE_AREA_ALL);
 
         this->UpdateUI_Configurations(UPDATE_REBUILD_UI);
-        this->UpdateUI_LoaderMessages();
         this->UpdateUI_Layers(UPDATE_REBUILD_UI);
         this->UpdateUI_Settings(UPDATE_REBUILD_UI);
     } else {
@@ -1067,75 +1046,41 @@ void TabConfigurations::OnContextMenuExportConfigsClicked(ListItem *item) {
     }
 }
 
-void TabConfigurations::OnContextMenuExportEnvVariablesBashClicked(ListItem *item) {
-    assert(item);
+void TabConfigurations::GenerateClicked(GenerateSettingsMode mode) {
     Configurator &configurator = Configurator::Get();
 
-    const Path path_export = configurator.configurations.last_path_export_config.RelativePath() + "/" + item->key + ".sh";
-    const QString &selected_path = QFileDialog::getSaveFileName(&this->window, "Export Environment Variables bash script",
-                                                                path_export.AbsolutePath().c_str(), "Shell Script(*.sh)");
-
-    const bool result = configurator.Export(EXPORT_ENV_BASH, selected_path.toStdString());
-
-    if (!result) {
-        QMessageBox msg;
-        msg.setIcon(QMessageBox::Critical);
-        msg.setWindowTitle("Exporting of a file failed...");
-        msg.setText(format("Couldn't be create '%s' file.", selected_path.toStdString().c_str()).c_str());
-        msg.exec();
-    } else {
-        Path path(selected_path.toStdString());
-        QDesktopServices::openUrl(QUrl::fromLocalFile(path.AbsoluteDir().c_str()));
+    const Configuration *configuration = configurator.GetActiveConfiguration();
+    if (configuration == nullptr) {
+        return;
     }
-}
 
-void TabConfigurations::OnContextMenuExportEnvVariablesCMDClicked(ListItem *item) {
-    assert(item);
-    Configurator &configurator = Configurator::Get();
-
-    const Path path_export = configurator.configurations.last_path_export_config.RelativePath() + "/" + item->key + ".bat";
-    const QString &selected_path = QFileDialog::getSaveFileName(&this->window, "Export Environment Variables command prompt script",
-                                                                path_export.AbsolutePath().c_str(), "Command Prompt Script(*.bat)");
-
-    const bool result = configurator.Export(EXPORT_ENV_CMD, selected_path.toStdString());
-
-    if (!result) {
-        QMessageBox msg;
-        msg.setIcon(QMessageBox::Critical);
-        msg.setWindowTitle("Exporting of a file failed...");
-        msg.setText(format("Couldn't be create '%s' file.", selected_path.toStdString().c_str()).c_str());
-        msg.exec();
-    } else {
-        Path path(selected_path.toStdString());
-        QDesktopServices::openUrl(QUrl::fromLocalFile(path.AbsoluteDir().c_str()));
-    }
-}
-
-void TabConfigurations::OnContextMenuExportSettingsClicked(ListItem *item) {
-    assert(item);
-
-    Configurator &configurator = Configurator::Get();
-
-    const Path path_export = configurator.configurations.last_path_export_settings;
-    const std::string &selected_path = QFileDialog::getSaveFileName(&this->window, "Export Layers Settings File",
-                                                                    path_export.AbsolutePath().c_str(), "Layers settings(*.txt)")
-                                           .toStdString();
+    const Path path_export =
+        configurator.configurations.last_path_export_settings.AbsolutePath() + "/" + configuration->key + ::GetDefaultFileExt(mode);
+    const std::string caption = format("Generate '%s' configuration %s", configuration->key.c_str(), ::GetLabel(mode));
+    const std::string filter = format("%s (*%s)", ::GetLabel(mode), ::GetDefaultFileExt(mode));
+    const std::string &selected_path =
+        QFileDialog::getSaveFileName(&this->window, caption.c_str(), path_export.AbsolutePath().c_str(), filter.c_str())
+            .toStdString();
 
     if (selected_path.empty()) {
         return;
     }
 
-    configurator.configurations.last_path_export_settings = selected_path;
-    const bool result = configurator.WriteLayersSettings(OVERRIDE_AREA_LAYERS_SETTINGS_BIT, selected_path.c_str());
+    const bool result = configurator.Generate(mode, selected_path.c_str());
 
     if (!result) {
+        const std::string title =
+            format("Generation of the '%s' configuration %s failed...", configuration->key.c_str(), ::GetLabel(mode));
+
         QMessageBox msg;
         msg.setIcon(QMessageBox::Critical);
-        msg.setWindowTitle("Exporting of a layers settings file failed...");
-        msg.setText(format("Couldn't be create '%s' layers settings file.", selected_path.c_str()).c_str());
+        msg.setWindowTitle(title.c_str());
+        msg.setText(format("Couldn't create '%s' file.", selected_path.c_str()).c_str());
         msg.exec();
     } else {
-        QDesktopServices::openUrl(QUrl::fromLocalFile(selected_path.c_str()));
+        const Path saved_path(selected_path);
+        configurator.configurations.last_path_export_settings = saved_path.AbsoluteDir();
+        QDesktopServices::openUrl(QUrl::fromLocalFile(saved_path.AbsoluteDir().c_str()));
     }
 }
 
@@ -1271,51 +1216,6 @@ void TabConfigurations::on_configurations_list_toggled(bool checked) {
     this->UpdateUI(UPDATE_REFRESH_UI);
 }
 
-void TabConfigurations::on_configurations_layers_ordering_toggled(bool checked) {
-    Configurator &configurator = Configurator::Get();
-    Configuration *configuration = configurator.GetActiveConfiguration();
-    if (configuration != nullptr) {
-        configuration->override_layers = checked;
-
-        configurator.Override(OVERRIDE_AREA_ALL);
-    }
-
-    this->UpdateUI(UPDATE_REFRESH_UI);
-}
-
-void TabConfigurations::on_configurations_driver_toggled(bool checked) {
-    Configurator &configurator = Configurator::Get();
-
-    Configuration *configuration = configurator.GetActiveConfiguration();
-    if (configuration != nullptr) {
-        configuration->override_driver = checked;
-
-        configurator.Override(OVERRIDE_AREA_LOADER_SETTINGS_BIT);
-    }
-}
-
-void TabConfigurations::on_configurations_driver_name_currentIndexChanged(int index) {
-    Configurator &configurator = Configurator::Get();
-
-    Configuration *configuration = configurator.GetActiveConfiguration();
-    if (configuration != nullptr) {
-        configuration->override_driver_name = this->ui->configuration_driver_name->itemText(index).toStdString();
-
-        configurator.Override(OVERRIDE_AREA_LOADER_SETTINGS_BIT);
-    }
-}
-
-void TabConfigurations::on_configurations_loader_messages_toggled(bool checked) {
-    Configurator &configurator = Configurator::Get();
-
-    Configuration *configuration = configurator.GetActiveConfiguration();
-    if (configuration != nullptr) {
-        configuration->override_loader = checked;
-
-        configurator.Override(OVERRIDE_AREA_LOADER_SETTINGS_BIT);
-    }
-}
-
 void TabConfigurations::on_configurations_layers_settings_toggled(bool checked) {
     Configurator &configurator = Configurator::Get();
 
@@ -1329,38 +1229,6 @@ void TabConfigurations::on_configurations_layers_settings_toggled(bool checked) 
     // The layer version combobox is on even when the layer settings group is unchecked
     this->UpdateUI_Settings(UPDATE_REFRESH_UI);
 }
-
-void TabConfigurations::OnCheckedLoaderMessageTypes(bool checked) {
-    (void)checked;
-
-    Configurator &configurator = Configurator::Get();
-
-    Configuration *active_configuration = configurator.GetActiveConfiguration();
-    if (active_configuration != nullptr) {
-        int loader_log_messages_bits = 0;
-        loader_log_messages_bits |= this->ui->configuration_loader_errors->isChecked() ? GetBit(LOG_ERROR) : 0;
-        loader_log_messages_bits |= this->ui->configuration_loader_warns->isChecked() ? GetBit(LOG_WARN) : 0;
-        loader_log_messages_bits |= this->ui->configuration_loader_infos->isChecked() ? GetBit(LOG_INFO) : 0;
-        loader_log_messages_bits |= this->ui->configuration_loader_debug->isChecked() ? GetBit(LOG_DEBUG) : 0;
-        loader_log_messages_bits |= this->ui->configuration_loader_layers->isChecked() ? GetBit(LOG_LAYER) : 0;
-        loader_log_messages_bits |= this->ui->configuration_loader_drivers->isChecked() ? GetBit(LOG_DRIVER) : 0;
-        active_configuration->loader_log_messages_flags = loader_log_messages_bits;
-
-        configurator.Override(OVERRIDE_AREA_LOADER_SETTINGS_BIT);
-    }
-}
-
-void TabConfigurations::on_configuration_loader_errors_toggled(bool checked) { this->OnCheckedLoaderMessageTypes(checked); }
-
-void TabConfigurations::on_configuration_loader_warns_toggled(bool checked) { this->OnCheckedLoaderMessageTypes(checked); }
-
-void TabConfigurations::on_configuration_loader_infos_toggled(bool checked) { this->OnCheckedLoaderMessageTypes(checked); }
-
-void TabConfigurations::on_configuration_loader_debug_toggled(bool checked) { this->OnCheckedLoaderMessageTypes(checked); }
-
-void TabConfigurations::on_configuration_loader_layers_toggled(bool checked) { this->OnCheckedLoaderMessageTypes(checked); }
-
-void TabConfigurations::on_configuration_loader_drivers_toggled(bool checked) { this->OnCheckedLoaderMessageTypes(checked); }
 
 void TabConfigurations::on_configurations_list_itemDoubleClicked(QListWidgetItem *item) { ui->configurations_list->editItem(item); }
 

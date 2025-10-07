@@ -40,17 +40,31 @@ enum VendorID {
     VENDOR_ID_QUALCOMM = 0x17CB,
 };
 
-struct VulkanPhysicalDeviceInfo {
+struct DeviceInfo {
     std::string deviceName;
     uint8_t deviceUUID[VK_UUID_SIZE];
-    std::string driverUUID;
-    std::string deviceLUID;
+    uint32_t driverVersion = 0;
+};
+
+bool operator==(const DeviceInfo &a, const DeviceInfo &b);
+bool operator!=(const DeviceInfo &a, const DeviceInfo &b);
+
+struct VulkanPhysicalDeviceInfo {
+    std::string deviceName;
+    std::string driverName;
+    uint8_t deviceUUID[VK_UUID_SIZE];
+    uint8_t driverUUID[VK_UUID_SIZE];
+    uint8_t deviceLUID[VK_LUID_SIZE];
     Version apiVersion;
-    uint32_t driverVersion;
+    uint32_t driverVersion = 0;
     VendorID vendorID;
     uint32_t deviceID;
     VkPhysicalDeviceType deviceType;
+
+    std::string GetVersion() const;
 };
+
+DeviceInfo GetDeviceInfo(const VulkanPhysicalDeviceInfo &info);
 
 struct VulkanSystemInfo {
     Version loaderVersion = Version::NONE;
@@ -62,7 +76,11 @@ struct VulkanSystemInfo {
 VulkanSystemInfo BuildVulkanSystemInfo();
 
 std::string GetUUIDString(const uint8_t deviceUUID[VK_UUID_SIZE]);
+std::string GetLUIDString(const uint8_t deviceUUID[VK_LUID_SIZE]);
 
+std::string GetCodeType(const std::string &layer_key);
+std::string GetCodeData(const std::string &layer_key);
+std::string GetSettingValueName(const std::string &layer_key, const std::string &setting_key, const std::string &value_key);
 std::string TrimPrefix(const std::string &layer_key);
 std::vector<std::string> BuildEnvVariablesList(const char *layer_key, const char *setting_key, bool android_sysprop = false);
 

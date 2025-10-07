@@ -34,6 +34,8 @@
 #include "type_executable_mode.h"
 #include "type_configurator_mode.h"
 #include "type_diagnostic_mode.h"
+#include "type_generate_settings.h"
+#include "type_driver_mode.h"
 #include "type_theme_mode.h"
 #include "serialization.h"
 
@@ -65,11 +67,7 @@ class Configurator {
     struct LoaderSettings {
         std::string executable_path;
         std::vector<LoaderLayerSettings> layers;
-        LogFlags stderr_log_flags = LOG_ERROR;
         bool override_layers = true;
-        bool override_loader = true;
-        bool override_driver = false;
-        std::string override_driver_name;
     };
 
     static Configurator& Get();
@@ -79,8 +77,10 @@ class Configurator {
    public:
     bool Load();
     bool Save() const;
+    void Log(LogType type, const std::string& message) const;
     std::string Log() const;
-    std::string LogConfiguration(const std::string& configuration_key) const;
+    std::string LogLayers(const std::string& configuration_key) const;
+    std::string LogLoaderMessage() const;
 
     bool Surrender(OverrideArea override_area);
     bool Override(OverrideArea override_area);
@@ -103,11 +103,13 @@ class Configurator {
     Executable* GetActiveExecutable();
     const Executable* GetActiveExecutable() const;
 
-    int GetActiveDeviceIndex() const;
+    int GetPhysicalDeviceIndex(const DeviceInfo& device_info) const;
+    const VulkanPhysicalDeviceInfo* GetPhysicalDevice(const DeviceInfo& device_info) const;
+    int GetActivePhysicalDeviceIndex() const;
+    const VulkanPhysicalDeviceInfo* GetActivePhysicalDevice() const;
+    bool Found(const DeviceInfo& device_info) const;
 
-    bool WriteLayersSettings(OverrideArea override_area, const Path& layers_settings_path);
-    bool WriteLoaderSettings(OverrideArea override_area, const Path& loader_settings_path);
-    bool Export(ExportEnvMode mode, const Path& export_path) const;
+    bool Generate(GenerateSettingsMode mode, const Path& output_path);
 
     void Set(HideMessageType type);
     bool Get(HideMessageType type) const;
@@ -143,8 +145,11 @@ class Configurator {
     Configurator(const Configurator&) = delete;
     Configurator& operator=(const Configurator&) = delete;
 
+    QJsonObject CreateJsonSettingObject(const Configurator::LoaderSettings& loader_settings) const;
+    QJsonObject CreateJsonGlobalObject() const;
+
     void BuildLoaderSettings(const std::string& configuration_key, const std::string& executable_path,
-                             std::vector<LoaderSettings>& loader_settings_array, bool full_loader_log) const;
+                             std::vector<LoaderSettings>& loader_settings_array) const;
 
     ConfiguratorMode init_mode = CONFIGURATOR_MODE_NONE;
 
@@ -165,11 +170,20 @@ class Configurator {
     bool advanced = true;
     Path last_path_status = Path(Path::HOME).AbsolutePath() + "/diagnostics";
     Path last_driver_path = Path(Path::HOME).AbsolutePath();
+    Path last_path_launch_log = Path(Path::HOME).AbsolutePath() + "/application_log.txt";
     Version online_sdk_version = Version::NONE;
     Version latest_sdk_version = Version::NONE;
     Version current_sdk_version = Version::VKHEADER;
 
+    bool driver_override_enabled = false;
+    DriverMode driver_override_mode = DRIVER_MODE_SINGLE;
+    DeviceInfo driver_override_info;
+    std::vector<DeviceInfo> driver_override_list;
     std::map<Path, bool> driver_paths;
+    bool driver_paths_enabled = false;
+
+    bool loader_log_enabled = false;
+    int loader_log_messages_flags = GetBit(LOG_ERROR);
 
     QByteArray window_geometry;
     QByteArray window_state;
@@ -187,6 +201,11 @@ class Configurator {
     bool show_external_layers_settings = true;
     ExecutableScope executable_scope = EXECUTABLE_ANY;
     std::string selected_global_configuration = "Validation";
+
+    bool WriteLoaderSettings(OverrideArea override_area, const Path& loader_settings_path);
+    bool WriteLayersSettings(OverrideArea override_area, const Path& layers_settings_path);
+    bool Export(ExportEnvMode mode, const Path& export_path) const;
+    bool WriteExtensionCode(const Path& export_path) const;
 };
 
 struct ConfiguratorGuard {

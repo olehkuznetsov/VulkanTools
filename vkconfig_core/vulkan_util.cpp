@@ -40,7 +40,7 @@ std::string GetUUIDString(const uint8_t deviceUUID[VK_UUID_SIZE]) {
     return result;
 }
 
-static std::string GetLUIDString(const uint8_t deviceLUID[VK_LUID_SIZE]) {
+std::string GetLUIDString(const uint8_t deviceLUID[VK_LUID_SIZE]) {
     std::string result;
 
     for (std::size_t i = 0, n = VK_LUID_SIZE; i < n; ++i) {
@@ -153,6 +153,44 @@ static VkResult CreateInstance(const VulkanFunctions &vk, bool enumerate_portabi
     return vk.CreateInstance(&inst_info, nullptr, &instance);
 }
 
+std::string VulkanPhysicalDeviceInfo::GetVersion() const {
+    if (this->vendorID == 0x10DE) {
+        return FormatNvidia(this->driverVersion);
+    } else if ((this->vendorID == 0x8086) && (VKC_PLATFORM & PLATFORM_WINDOWS_BIT)) {
+        return FormatIntelWindows(this->driverVersion);
+    } else {
+        return Version(this->driverVersion).str();
+    }
+}
+
+DeviceInfo GetDeviceInfo(const VulkanPhysicalDeviceInfo &info) {
+    DeviceInfo device_info;
+    device_info.deviceName = info.deviceName;
+    std::copy(std::begin(info.deviceUUID), std::end(info.deviceUUID), std::begin(device_info.deviceUUID));
+    device_info.driverVersion = info.driverVersion;
+    return device_info;
+}
+
+bool operator==(const DeviceInfo &a, const DeviceInfo &b) {
+    if (a.deviceName != b.deviceName) {
+        return false;
+    }
+
+    for (int i = 0, n = VK_UUID_SIZE; i < n; ++i) {
+        if (a.deviceUUID[i] != b.deviceUUID[i]) {
+            return false;
+        }
+    }
+
+    if (a.driverVersion != b.driverVersion) {
+        return false;
+    }
+
+    return true;
+}
+
+bool operator!=(const DeviceInfo &a, const DeviceInfo &b) { return !(a == b); }
+
 VulkanSystemInfo BuildVulkanSystemInfo() {
     VulkanSystemInfo vulkan_system_info;
 
@@ -243,14 +281,21 @@ VulkanSystemInfo BuildVulkanSystemInfo() {
         vk.GetPhysicalDeviceProperties2(devices[i], &properties2);
 
         device_info.deviceName = properties2.properties.deviceName;
-        device_info.apiVersion = Version(properties2.properties.apiVersion);
+
+        /* For multiple driver version testing only
+                if (device_info.deviceName.find("llvmpipe") != std::string::npos) {
+                    device_info.deviceName = "llvmpipe";
+                }
+        */
+
         device_info.driverVersion = properties2.properties.driverVersion;
+        device_info.apiVersion = Version(properties2.properties.apiVersion);
         device_info.vendorID = static_cast<VendorID>(properties2.properties.vendorID);
         device_info.deviceID = properties2.properties.deviceID;
         device_info.deviceType = properties2.properties.deviceType;
         memcpy(device_info.deviceUUID, properties_deviceid.deviceUUID, sizeof(device_info.deviceUUID));
-        device_info.driverUUID = GetUUIDString(properties_deviceid.driverUUID);
-        device_info.deviceLUID = GetLUIDString(properties_deviceid.deviceLUID);
+        memcpy(device_info.driverUUID, properties_deviceid.driverUUID, sizeof(device_info.driverUUID));
+        memcpy(device_info.deviceLUID, properties_deviceid.deviceLUID, sizeof(device_info.deviceLUID));
     }
 
     vk.DestroyInstance(instance, NULL);
@@ -364,6 +409,23 @@ std::vector<std::string> BuildEnvVariablesList(const char *layer_key, const char
     }
 
     return results;
+}
+
+std::string GetCodeType(const std::string &layer_key) {
+    std::string key = TrimVendor(layer_key);
+    key.erase(std::remove_if(key.begin(), key.end(), [](char c) { return c == '_'; }), key.end());
+    key[0] = std::toupper(key[0]);
+    return key + "SettingData";
+}
+
+std::string GetCodeData(const std::string &layer_key) { return TrimVendor(layer_key); }
+
+std::string GetSettingValueName(const std::string &layer_key, const std::string &setting_key, const std::string &value_key) {
+    std::string layer = ::ToUpperCase(::GetCodeData(layer_key));
+    std::string setting = ::ToUpperCase(setting_key);
+    std::string value = ::ToUpperCase(value_key);
+
+    return format("VL_%s_%s_%s", layer.c_str(), setting.c_str(), value.c_str());
 }
 
 const char *GetLabel(VkPhysicalDeviceType deviceType) {

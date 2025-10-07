@@ -1,15 +1,31 @@
 ## Vulkan Configurator 3.4.0 - October 2025
-[Vulkan SDK main](https://github.com/LunarG/VulkanTools/tree/main)
+[Vulkan SDK 1.4.328.0](https://github.com/LunarG/VulkanTools/tree/vulkan-sdk-1.4.328)
 
 ### Features:
-- Add additional driver paths tab
-- Add force physical device to loader configuration
+- Add Vulkan drivers tab
+  - Add force physical device
+  - Add additional Vulkan drivers
+- Add log search bar to Application Launcher tab
+- Add code export to `VK_EXT_layer_settings` extension code for Vulkan application of layers configurations
+- Add command line `settings` argument to generate:
+  - `VK_EXT_layer_settings` extension code for Vulkan application of layers configurations
+  - Environment variables script of layers configurations
+  - `vk_layer_settings.txt` layers settings file
+- Add an automatic default layer preset, to reset the layer settings to default
+
+### Improvements:
+- Clean up command line `help`
+- Improve command line consistency
+- Move Vulkan Loader Log to diagnostics tab as a global setting
 
 ### Fixes:
 - Fix invalid downloaded SDK filename
+- Fix Vulkan Loader not sending log on first application run
+- Fix layer settings cursor update #2475
 
 ### Deprecation:
 - Deprecate the synchronization configuration
+- Deprecate Vulkan Configurator command line `doc`, replaced by `settings`
 
 ## Vulkan Configurator 3.3.0 - July 2025
 [Vulkan SDK 1.4.321.0](https://github.com/LunarG/VulkanTools/tree/vulkan-sdk-1.4.321)
@@ -25,7 +41,7 @@
   - Add detailed description layer setting field
   - Add display of deprecated setting information in generated layer documentation
   - Add optional information about which setting replaced a deprecated setting
-  - Add layer setting dependences to generated vk_layer_settings.txt
+  - Add layer setting dependences to generated `vk_layer_settings.txt`
 - Add theme mode control in preference tab
   - Add custom alternate rows color
 
