@@ -80,7 +80,11 @@ VkResult layer_test::VulkanInstanceBuilder::GetPhysicalDevice(VkPhysicalDevice* 
     if (res != VK_SUCCESS) {
         return res;
     }
-    *phys_dev = gpus[0];
+    if (gpu_count > 0) {
+        *phys_dev = gpus[0];
+    } else {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
     return res;
 }
 

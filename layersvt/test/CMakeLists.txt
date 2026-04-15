@@ -34,12 +34,11 @@ function(LayerTest NAME)
                    layer_test_framework.h)
     add_dependencies(${TEST_NAME} VkLayer_${NAME})
     target_link_libraries(${TEST_NAME} Vulkan::Headers Vulkan::Loader GTest::gtest GTest::gtest_main Vulkan::LayerSettings)
+    if (${NAME} STREQUAL "DebugMarker")
+        target_sources(${TEST_NAME} PRIVATE ../debug_marker.cpp ../debug_marker_perfetto.cpp ../perfetto/perfetto.cc)
+    endif()
     target_compile_definitions(${TEST_NAME} PUBLIC LAYER_BINARY_PATH="$<TARGET_FILE_DIR:VkLayer_${NAME}>")
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
-
-    set_tests_properties(${TEST_NAME} PROPERTIES ENVIRONMENT
-        "VK_LAYER_PATH=$<TARGET_FILE_DIR:VkLayer_${NAME}>"
-    )
 
     set_target_properties(${TEST_NAME} PROPERTIES FOLDER "layers/${NAME}/Test")
 
@@ -48,7 +47,7 @@ function(LayerTest NAME)
     endif()
 endfunction()
 
-set(LAYER_TEST_FILES api_dump monitor screenshot CPUTiming)
+set(LAYER_TEST_FILES api_dump monitor screenshot CPUTiming DebugMarker)
 
 foreach(test_item ${LAYER_TEST_FILES})
     # If the target doesn't exist continue.
