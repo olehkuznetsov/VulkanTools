@@ -24,6 +24,6 @@ void InitializeScreenshotsPerfetto() {
     perfetto::TrackEvent::Register();
 
     perfetto::DataSourceDescriptor dsd;
-    dsd.set_name("application_screenshot");
+    dsd.set_name("VulkanScreenshots");
     ScreenshotDataSource::Register(dsd);
 }

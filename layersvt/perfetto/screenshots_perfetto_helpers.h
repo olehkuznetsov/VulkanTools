@@ -9,7 +9,7 @@
 
 // Define categories used for Perfetto tracing in the screenshot layer.
 PERFETTO_DEFINE_CATEGORIES(
-    perfetto::Category("application_screenshot").SetDescription("Vulkan Layer Screenshots")
+    perfetto::Category("VulkanScreenshots").SetDescription("Vulkan Layer Screenshots")
 );
 
 class ScreenshotDataSource : public perfetto::DataSource<ScreenshotDataSource> {

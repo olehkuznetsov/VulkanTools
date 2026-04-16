@@ -97,7 +97,7 @@ adb shell "run-as <your.package.name> cp /data/local/tmp/vk_layer_settings.txt .
 ```
 
 #### 4. Record the Trace
-Create a Perfetto config textproto with the category `application_screenshot` enabled:
+Create a Perfetto config textproto with the category `VulkanScreenshots` enabled:
 ```textproto
 buffers {
   size_kb: 63488
@@ -106,7 +106,7 @@ data_sources {
   config {
     name: "track_event"
     track_event_config {
-      enabled_categories: "application_screenshot"
+      enabled_categories: "VulkanScreenshots"
     }
   }
 }
