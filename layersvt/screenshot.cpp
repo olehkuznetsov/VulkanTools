@@ -50,7 +50,7 @@ using namespace std;
 #include "vk_layer_table.h"
 
 #include "screenshot_parsing.h"
-#include "perfetto/perfetto_helpers.h"
+#include "perfetto/screenshots_perfetto_helpers.h"
 
 #ifdef ANDROID
 #include <android/trace.h>
@@ -410,13 +410,14 @@ void startScreenshotThread() {
 }
 
 static void init_screenshot(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator) {
+    static std::once_flag perfetto_init_flag;
     std::lock_guard<std::mutex> lg(globalLock);
     VkuLayerSettingSet layerSettingSet;
     vkuCreateLayerSettingSet("VK_LAYER_LUNARG_screenshot", vkuFindLayerSettingsCreateInfo(pCreateInfo), pAllocator, nullptr,
                              &layerSettingSet);
 
     settings.init(layerSettingSet);
-    InitializePerfetto();
+    std::call_once(perfetto_init_flag, []() { InitializeScreenshotsPerfetto(); });
 
     // Init global layer setting set with pFirstCreateInfo as nullptr.
     // We are checking for settings changes at runtime and pFirstCreateInfo is const.
