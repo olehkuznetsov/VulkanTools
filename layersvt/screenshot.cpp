@@ -76,10 +76,10 @@ enum class ColorSpaceFormat { UNDEFINED, UNORM, SNORM, USCALED, SSCALED, UINT, S
 
 // unordered map: associates Vulkan dispatchable objects to a dispatch table
 typedef struct {
-    VkuDeviceDispatchTable *device_dispatch_table;
+    VkuDeviceDispatchTable* device_dispatch_table;
     PFN_vkSetDeviceLoaderData pfn_dev_init;
 } DispatchMapStruct;
-static unordered_map<VkDevice, DispatchMapStruct *> dispatchMap;
+static unordered_map<VkDevice, DispatchMapStruct*> dispatchMap;
 
 // unordered map: associates a swap chain with a device, image extent, format,
 // and list of images
@@ -111,7 +111,7 @@ struct DeviceMapStruct {
     unordered_map<VkQueue, uint32_t> queueIndexMap;
     VkPhysicalDevice physicalDevice;
 };
-static unordered_map<VkDevice, DeviceMapStruct *> deviceMap;
+static unordered_map<VkDevice, DeviceMapStruct*> deviceMap;
 
 // unordered map: associates a physical device with an instance
 typedef struct {
@@ -156,7 +156,7 @@ class Settings {
 
    private:
     // Parse comma-separated frame list string into the set
-    void populate_frame_list(const char *vk_screenshot_frames);
+    void populate_frame_list(const char* vk_screenshot_frames);
 
    private:
     // Screenshots will be generated from screenShotFrameRange's startFrame to startFrame+count-1 with skipped Interval in between.
@@ -167,7 +167,7 @@ class Settings {
 };
 
 void updatePauseCapture(VkuLayerSettingSet layerSettingSet) {
-    const char *kSettingPauseCapture = "pause";
+    const char* kSettingPauseCapture = "pause";
     if (vkuHasLayerSetting(layerSettingSet, kSettingPauseCapture)) {
         bool newPauseCapture = false;
         vkuGetLayerSettingValue(layerSettingSet, kSettingPauseCapture, newPauseCapture);
@@ -176,14 +176,14 @@ void updatePauseCapture(VkuLayerSettingSet layerSettingSet) {
 }
 
 void Settings::init(VkuLayerSettingSet layerSettingSet) {
-    const char *kSettingsKeyFrames = "frames";
-    const char *kSettingKeyFormat = "format";
-    const char *kSettingKeyDir = "dir";
-    const char *kSettingScale = "scale";
-    const char *kSettingQueueSize = "queue";
-    const char *kSettingAllowSkip = "skip";
-    const char *kSettingProfile = "profile";
-    const char *kSettingScreenshotExtension = "extension";
+    const char* kSettingsKeyFrames = "frames";
+    const char* kSettingKeyFormat = "format";
+    const char* kSettingKeyDir = "dir";
+    const char* kSettingScale = "scale";
+    const char* kSettingQueueSize = "queue";
+    const char* kSettingAllowSkip = "skip";
+    const char* kSettingProfile = "profile";
+    const char* kSettingScreenshotExtension = "extension";
 
     if (vkuHasLayerSetting(layerSettingSet, kSettingScale)) {
         vkuGetLayerSettingValue(layerSettingSet, kSettingScale, scalePercent);
@@ -281,7 +281,7 @@ void Settings::init(VkuLayerSettingSet layerSettingSet) {
 // return:
 //  maximum frame number of the frame range,
 //  if it's unlimited range, the return will be SCREEN_SHOT_FRAMES_UNLIMITED
-int getEndFrameOfRange(const FrameRange *pFrameRange) {
+int getEndFrameOfRange(const FrameRange* pFrameRange) {
     int endFrameOfRange = SCREEN_SHOT_FRAMES_UNLIMITED;
     if (pFrameRange->count != SCREEN_SHOT_FRAMES_UNLIMITED) {
         endFrameOfRange = pFrameRange->startFrame + (pFrameRange->count - 1) * pFrameRange->interval;
@@ -309,7 +309,7 @@ bool Settings::isFrameAfterEndOfCaptureRange(int frame) const {
     return screenshotFrames.empty() || frame > *std::prev(screenshotFrames.end());
 }
 
-void Settings::populate_frame_list(const char *vk_screenshot_frames) {
+void Settings::populate_frame_list(const char* vk_screenshot_frames) {
     string spec(vk_screenshot_frames), word;
     size_t start = 0, comma = 0;
 
@@ -348,7 +348,7 @@ Settings settings;
 #ifdef ANDROID
 class ATrace {
    public:
-    ATrace(const char *block) {
+    ATrace(const char* block) {
         if (settings.isProfilingEnabled) ATrace_beginSection(block);
     }
 
@@ -365,8 +365,8 @@ class ATrace {
 #define PROFILE_COUNTER(name, value)
 #endif
 
-static bool memory_type_from_properties(VkPhysicalDeviceMemoryProperties *memory_properties, uint32_t typeBits,
-                                        VkFlags requirements_mask, uint32_t *typeIndex) {
+static bool memory_type_from_properties(VkPhysicalDeviceMemoryProperties* memory_properties, uint32_t typeBits,
+                                        VkFlags requirements_mask, uint32_t* typeIndex) {
     // Search memtypes to find first index with those properties
     for (uint32_t i = 0; i < 32; i++) {
         if ((typeBits & 1) == 1) {
@@ -382,7 +382,7 @@ static bool memory_type_from_properties(VkPhysicalDeviceMemoryProperties *memory
     return false;
 }
 
-static DispatchMapStruct *get_dispatch_info(VkDevice dev) {
+static DispatchMapStruct* get_dispatch_info(VkDevice dev) {
     auto it = dispatchMap.find(dev);
     if (it == dispatchMap.end())
         return NULL;
@@ -390,7 +390,7 @@ static DispatchMapStruct *get_dispatch_info(VkDevice dev) {
         return it->second;
 }
 
-static DeviceMapStruct *get_device_info(VkDevice dev) {
+static DeviceMapStruct* get_device_info(VkDevice dev) {
     auto it = deviceMap.find(dev);
     if (it == deviceMap.end())
         return NULL;
@@ -406,7 +406,7 @@ void startScreenshotThread() {
     screenshotWriterThread = std::thread(screenshotWriterThreadFunc);
 }
 
-static void init_screenshot(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator) {
+static void init_screenshot(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator) {
     std::lock_guard<std::mutex> lg(globalLock);
     VkuLayerSettingSet layerSettingSet;
     vkuCreateLayerSettingSet("VK_LAYER_LUNARG_screenshot", vkuFindLayerSettingsCreateInfo(pCreateInfo), pAllocator, nullptr,
@@ -455,8 +455,8 @@ VkQueue getQueueForScreenshot(VkDevice device) {
     uint32_t count;
     VkBool32 graphicsCapable = VK_FALSE;
     VkBool32 presentCapable = VK_FALSE;
-    VkuInstanceDispatchTable *pInstanceTable;
-    DeviceMapStruct *devMap = get_device_info(device);
+    VkuInstanceDispatchTable* pInstanceTable;
+    DeviceMapStruct* devMap = get_device_info(device);
     if (NULL == devMap) {
         assert(0);
         return queue;
@@ -497,7 +497,7 @@ VkQueue getQueueForScreenshot(VkDevice device) {
 }
 
 // Writes image to a PAM file.
-bool writePAM(const char *filename, const char *pixels, uint32_t width, uint32_t height, uint32_t numChannels, uint32_t rowPitch) {
+bool writePAM(const char* filename, const char* pixels, uint32_t width, uint32_t height, uint32_t numChannels, uint32_t rowPitch) {
     PROFILE("writePAM");
     std::ofstream file(filename, ios::binary);
     if (!file.is_open()) {
@@ -525,7 +525,7 @@ bool writePAM(const char *filename, const char *pixels, uint32_t width, uint32_t
 }
 
 // Writes image to a PPM file.
-bool writePPM(const char *filename, const char *pixels, uint32_t width, uint32_t height, uint32_t numChannels, uint32_t rowPitch) {
+bool writePPM(const char* filename, const char* pixels, uint32_t width, uint32_t height, uint32_t numChannels, uint32_t rowPitch) {
     PROFILE("writePPM");
 
     std::ofstream file(filename, ios::binary);
@@ -547,14 +547,14 @@ bool writePPM(const char *filename, const char *pixels, uint32_t width, uint32_t
         std::vector<unsigned char> tempRowBuffer;
         tempRowBuffer.resize(3 * width + 1);
         for (uint32_t y = 0; y < height; y++) {
-            const uint32_t *srcRow = reinterpret_cast<const uint32_t *>(pixels);
-            unsigned char *destRow = tempRowBuffer.data();
+            const uint32_t* srcRow = reinterpret_cast<const uint32_t*>(pixels);
+            unsigned char* destRow = tempRowBuffer.data();
 
             for (uint32_t x = 0; x < width; x++) {
-                *reinterpret_cast<uint32_t *>(destRow) = *srcRow++;
+                *reinterpret_cast<uint32_t*>(destRow) = *srcRow++;
                 destRow += 3;
             }
-            file.write(reinterpret_cast<const char *>(tempRowBuffer.data()), 3 * width);
+            file.write(reinterpret_cast<const char*>(tempRowBuffer.data()), 3 * width);
             pixels += rowPitch;
         }
     }
@@ -744,7 +744,7 @@ struct ScreenshotQueueData {
     VkDevice device = VK_NULL_HANDLE;
     VkSwapchainKHR swapchain;
     VkImage image1;  // source image
-    VkuDeviceDispatchTable *pTableDevice;
+    VkuDeviceDispatchTable* pTableDevice;
     uint32_t dstWidth;
     uint32_t dstHeight;
     int dstNumChannels;
@@ -777,7 +777,7 @@ ScreenshotQueueData::~ScreenshotQueueData() {
 std::list<std::shared_ptr<ScreenshotQueueData>> screenshotsData;
 std::unordered_map<VkImage, std::list<std::shared_ptr<ScreenshotQueueData>>> screenshotDataCache;
 
-bool prepareScreenshotData(ScreenshotQueueData &data, VkImage image1) {
+bool prepareScreenshotData(ScreenshotQueueData& data, VkImage image1) {
     PROFILE("screenshot.prepare");
     VkResult err;
     bool pass;
@@ -787,7 +787,7 @@ bool prepareScreenshotData(ScreenshotQueueData &data, VkImage image1) {
     VkDevice device = imageMap[image1].device;
     VkPhysicalDevice physicalDevice = deviceMap[device]->physicalDevice;
     VkInstance instance = physDeviceMap[physicalDevice].instance;
-    DispatchMapStruct *dispMap = get_dispatch_info(device);
+    DispatchMapStruct* dispMap = get_dispatch_info(device);
     if (NULL == dispMap) {
         assert(0);
         return false;
@@ -801,10 +801,10 @@ bool prepareScreenshotData(ScreenshotQueueData &data, VkImage image1) {
 #endif
         return false;
     }
-    VkuDeviceDispatchTable *pTableDevice = dispMap->device_dispatch_table;
-    VkuDeviceDispatchTable *pTableQueue =
-        get_dispatch_info(static_cast<VkDevice>(static_cast<void *>(queue)))->device_dispatch_table;
-    VkuInstanceDispatchTable *pInstanceTable;
+    VkuDeviceDispatchTable* pTableDevice = dispMap->device_dispatch_table;
+    VkuDeviceDispatchTable* pTableQueue =
+        get_dispatch_info(static_cast<VkDevice>(static_cast<void*>(queue)))->device_dispatch_table;
+    VkuInstanceDispatchTable* pInstanceTable;
     pInstanceTable = instance_dispatch_table(instance);
 
     // Gather incoming image info and check image format for compatibility with
@@ -990,14 +990,14 @@ bool prepareScreenshotData(ScreenshotQueueData &data, VkImage image1) {
     assert(!err);
     if (VK_SUCCESS != err) return false;
 
-    VkuDeviceDispatchTable *pTableCommandBuffer = dispMap->device_dispatch_table;
+    VkuDeviceDispatchTable* pTableCommandBuffer = dispMap->device_dispatch_table;
 
     // We have just created a dispatchable object, but the dispatch table has
     // not been placed in the object yet.  When a "normal" application creates
     // a command buffer, the dispatch table is installed by the top-level api
     // binding (trampoline.c). But here, we have to do it ourselves.
     if (dispMap->pfn_dev_init) {
-        err = dispMap->pfn_dev_init(device, (void *)data.commandBuffer);
+        err = dispMap->pfn_dev_init(device, (void*)data.commandBuffer);
         assert(!err);
     }
 
@@ -1157,7 +1157,7 @@ bool prepareScreenshotData(ScreenshotQueueData &data, VkImage image1) {
 // (TODO) It would be nice to pass any failure info to DebugReport or something.
 //
 // Returns true if successfull, false otherwise.
-static bool queueScreenshot(ScreenshotQueueData &data, VkImage image1, const VkPresentInfoKHR *presentInfo) {
+static bool queueScreenshot(ScreenshotQueueData& data, VkImage image1, const VkPresentInfoKHR* presentInfo) {
     PROFILE("screenshot.queue");
     if (data.device == VK_NULL_HANDLE) {
         if (!prepareScreenshotData(data, image1)) {
@@ -1193,8 +1193,8 @@ static bool queueScreenshot(ScreenshotQueueData &data, VkImage image1, const VkP
         return false;
     }
 
-    VkuDeviceDispatchTable *pTableQueue =
-        get_dispatch_info(static_cast<VkDevice>(static_cast<void *>(queue)))->device_dispatch_table;
+    VkuDeviceDispatchTable* pTableQueue =
+        get_dispatch_info(static_cast<VkDevice>(static_cast<void*>(queue)))->device_dispatch_table;
 
     VkResult err = pTableQueue->QueueSubmit(queue, 1, &submitInfo, data.fence);
     assert(!err);
@@ -1204,19 +1204,19 @@ static bool queueScreenshot(ScreenshotQueueData &data, VkImage image1, const VkP
 
 // Save an image to a PPM image file.
 // Returns true if file is successfully written, false otherwise.
-static bool writeScreenshot(ScreenshotQueueData &data) {
+static bool writeScreenshot(ScreenshotQueueData& data) {
     PROFILE("screenshot.write");
     // Map the final image so that the CPU can read it.
     const VkImageSubresource sr = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0};
     VkSubresourceLayout srLayout;
-    const char *pixels;
+    const char* pixels;
     if (data.image3 == VK_NULL_HANDLE) {
         data.pTableDevice->GetImageSubresourceLayout(data.device, data.image2, &sr, &srLayout);
-        VkResult err = data.pTableDevice->MapMemory(data.device, data.mem2, 0, VK_WHOLE_SIZE, 0, (void **)&pixels);
+        VkResult err = data.pTableDevice->MapMemory(data.device, data.mem2, 0, VK_WHOLE_SIZE, 0, (void**)&pixels);
         if (VK_SUCCESS != err) return false;
     } else {
         data.pTableDevice->GetImageSubresourceLayout(data.device, data.image3, &sr, &srLayout);
-        VkResult err = data.pTableDevice->MapMemory(data.device, data.mem3, 0, VK_WHOLE_SIZE, 0, (void **)&pixels);
+        VkResult err = data.pTableDevice->MapMemory(data.device, data.mem3, 0, VK_WHOLE_SIZE, 0, (void**)&pixels);
         if (VK_SUCCESS != err) return false;
     }
 
@@ -1265,8 +1265,8 @@ static bool writeScreenshot(ScreenshotQueueData &data) {
     return true;
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL CreateInstance(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
-                                              VkInstance *pInstance) {
+VKAPI_ATTR VkResult VKAPI_CALL CreateInstance(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator,
+                                              VkInstance* pInstance) {
 #if defined(_WIN32) && defined(_CRTDBG_MODE_FILE)
 #if !defined(NDEBUG)
     _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
@@ -1278,7 +1278,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateInstance(const VkInstanceCreateInfo *pCreat
     _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
     _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
 #endif
-    VkLayerInstanceCreateInfo *chain_info = get_chain_info(pCreateInfo, VK_LAYER_LINK_INFO);
+    VkLayerInstanceCreateInfo* chain_info = get_chain_info(pCreateInfo, VK_LAYER_LINK_INFO);
 
     assert(chain_info->u.pLayerInfo);
     PFN_vkGetInstanceProcAddr fpGetInstanceProcAddr = chain_info->u.pLayerInfo->pfnNextGetInstanceProcAddr;
@@ -1301,7 +1301,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateInstance(const VkInstanceCreateInfo *pCreat
     return result;
 }
 
-VKAPI_ATTR void VKAPI_CALL DestroyInstance(VkInstance instance, const VkAllocationCallbacks *pAllocator) {
+VKAPI_ATTR void VKAPI_CALL DestroyInstance(VkInstance instance, const VkAllocationCallbacks* pAllocator) {
     shutdown_screenshot();
 
     {
@@ -1310,17 +1310,17 @@ VKAPI_ATTR void VKAPI_CALL DestroyInstance(VkInstance instance, const VkAllocati
         globalLayerSettingSet = VK_NULL_HANDLE;
     }
 
-    VkuInstanceDispatchTable *pTable = instance_dispatch_table(instance);
+    VkuInstanceDispatchTable* pTable = instance_dispatch_table(instance);
     pTable->DestroyInstance(instance, pAllocator);
 
     // TODO - screenshot doesn't support multiple instances at the same time
 }
 
-static void createDeviceRegisterExtensions(const VkDeviceCreateInfo *pCreateInfo, VkDevice device) {
+static void createDeviceRegisterExtensions(const VkDeviceCreateInfo* pCreateInfo, VkDevice device) {
     uint32_t i;
-    DispatchMapStruct *dispMap = get_dispatch_info(device);
-    DeviceMapStruct *devMap = get_device_info(device);
-    VkuDeviceDispatchTable *pDisp = dispMap->device_dispatch_table;
+    DispatchMapStruct* dispMap = get_dispatch_info(device);
+    DeviceMapStruct* devMap = get_device_info(device);
+    VkuDeviceDispatchTable* pDisp = dispMap->device_dispatch_table;
     PFN_vkGetDeviceProcAddr gpa = pDisp->GetDeviceProcAddr;
     pDisp->CreateSwapchainKHR = (PFN_vkCreateSwapchainKHR)gpa(device, "vkCreateSwapchainKHR");
     pDisp->GetSwapchainImagesKHR = (PFN_vkGetSwapchainImagesKHR)gpa(device, "vkGetSwapchainImagesKHR");
@@ -1332,9 +1332,9 @@ static void createDeviceRegisterExtensions(const VkDeviceCreateInfo *pCreateInfo
     }
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL CreateDevice(VkPhysicalDevice gpu, const VkDeviceCreateInfo *pCreateInfo,
-                                            const VkAllocationCallbacks *pAllocator, VkDevice *pDevice) {
-    VkLayerDeviceCreateInfo *chain_info = get_chain_info(pCreateInfo, VK_LAYER_LINK_INFO);
+VKAPI_ATTR VkResult VKAPI_CALL CreateDevice(VkPhysicalDevice gpu, const VkDeviceCreateInfo* pCreateInfo,
+                                            const VkAllocationCallbacks* pAllocator, VkDevice* pDevice) {
+    VkLayerDeviceCreateInfo* chain_info = get_chain_info(pCreateInfo, VK_LAYER_LINK_INFO);
 
     assert(chain_info->u.pLayerInfo);
     PFN_vkGetInstanceProcAddr fpGetInstanceProcAddr = chain_info->u.pLayerInfo->pfnNextGetInstanceProcAddr;
@@ -1354,10 +1354,10 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateDevice(VkPhysicalDevice gpu, const VkDevice
     }
 
     assert(deviceMap.find(*pDevice) == deviceMap.end());
-    DeviceMapStruct *deviceMapElem = new DeviceMapStruct;
+    DeviceMapStruct* deviceMapElem = new DeviceMapStruct;
     deviceMap[*pDevice] = deviceMapElem;
     assert(dispatchMap.find(*pDevice) == dispatchMap.end());
-    DispatchMapStruct *dispatchMapElem = new DispatchMapStruct;
+    DispatchMapStruct* dispatchMapElem = new DispatchMapStruct;
     dispatchMap[*pDevice] = dispatchMapElem;
 
     // Setup device dispatch table
@@ -1378,11 +1378,11 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateDevice(VkPhysicalDevice gpu, const VkDevice
     return result;
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL EnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalDeviceCount,
-                                                        VkPhysicalDevice *pPhysicalDevices) {
+VKAPI_ATTR VkResult VKAPI_CALL EnumeratePhysicalDevices(VkInstance instance, uint32_t* pPhysicalDeviceCount,
+                                                        VkPhysicalDevice* pPhysicalDevices) {
     VkResult result;
 
-    VkuInstanceDispatchTable *pTable = instance_dispatch_table(instance);
+    VkuInstanceDispatchTable* pTable = instance_dispatch_table(instance);
     result = pTable->EnumeratePhysicalDevices(instance, pPhysicalDeviceCount, pPhysicalDevices);
     if (result == VK_SUCCESS && *pPhysicalDeviceCount > 0 && pPhysicalDevices) {
         for (uint32_t i = 0; i < *pPhysicalDeviceCount; i++) {
@@ -1393,10 +1393,10 @@ VKAPI_ATTR VkResult VKAPI_CALL EnumeratePhysicalDevices(VkInstance instance, uin
     return result;
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL EnumeratePhysicalDeviceGroups(VkInstance instance, uint32_t *pPhysicalDeviceGroupCount,
-                                                             VkPhysicalDeviceGroupProperties *pPhysicalDeviceGroupProperties) {
+VKAPI_ATTR VkResult VKAPI_CALL EnumeratePhysicalDeviceGroups(VkInstance instance, uint32_t* pPhysicalDeviceGroupCount,
+                                                             VkPhysicalDeviceGroupProperties* pPhysicalDeviceGroupProperties) {
     VkResult result;
-    VkuInstanceDispatchTable *pTable = instance_dispatch_table(instance);
+    VkuInstanceDispatchTable* pTable = instance_dispatch_table(instance);
     result = pTable->EnumeratePhysicalDeviceGroups(instance, pPhysicalDeviceGroupCount, pPhysicalDeviceGroupProperties);
     if (result == VK_SUCCESS && *pPhysicalDeviceGroupCount > 0 && pPhysicalDeviceGroupProperties) {
         for (uint32_t i = 0; i < *pPhysicalDeviceGroupCount; i++) {
@@ -1409,12 +1409,12 @@ VKAPI_ATTR VkResult VKAPI_CALL EnumeratePhysicalDeviceGroups(VkInstance instance
     return VK_SUCCESS;
 }
 
-VKAPI_ATTR void VKAPI_CALL DestroyDevice(VkDevice device, const VkAllocationCallbacks *pAllocator) {
-    DispatchMapStruct *dispMap = get_dispatch_info(device);
-    DeviceMapStruct *devMap = get_device_info(device);
+VKAPI_ATTR void VKAPI_CALL DestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator) {
+    DispatchMapStruct* dispMap = get_dispatch_info(device);
+    DeviceMapStruct* devMap = get_device_info(device);
     assert(dispMap);
     assert(devMap);
-    VkuDeviceDispatchTable *pDisp = dispMap->device_dispatch_table;
+    VkuDeviceDispatchTable* pDisp = dispMap->device_dispatch_table;
     pDisp->DestroyDevice(device, pAllocator);
 
     std::lock_guard<std::mutex> lg(globalLock);
@@ -1426,10 +1426,10 @@ VKAPI_ATTR void VKAPI_CALL DestroyDevice(VkDevice device, const VkAllocationCall
     dispatchMap.erase(device);
 }
 
-VKAPI_ATTR void VKAPI_CALL GetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue *pQueue) {
-    DispatchMapStruct *dispMap = get_dispatch_info(device);
+VKAPI_ATTR void VKAPI_CALL GetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue* pQueue) {
+    DispatchMapStruct* dispMap = get_dispatch_info(device);
     assert(dispMap);
-    VkuDeviceDispatchTable *pDisp = dispMap->device_dispatch_table;
+    VkuDeviceDispatchTable* pDisp = dispMap->device_dispatch_table;
     pDisp->GetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
 
     // Save the device queue in a map if we are taking screenshots.
@@ -1447,19 +1447,19 @@ VKAPI_ATTR void VKAPI_CALL GetDeviceQueue(VkDevice device, uint32_t queueFamilyI
     // queues are dispatchable objects.
     // Create dispatchMap entry with this queue as its key.
     // Copy the device dispatch table to the new dispatch table.
-    VkDevice que = static_cast<VkDevice>(static_cast<void *>(*pQueue));
+    VkDevice que = static_cast<VkDevice>(static_cast<void*>(*pQueue));
     dispatchMap[que] = dispMap;
 }
 
-VKAPI_ATTR void VKAPI_CALL GetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2 *pQueueInfo, VkQueue *pQueue) {
+VKAPI_ATTR void VKAPI_CALL GetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* pQueueInfo, VkQueue* pQueue) {
     if (pQueueInfo) GetDeviceQueue(device, pQueueInfo->queueFamilyIndex, pQueueInfo->queueIndex, pQueue);
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL CreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR *pCreateInfo,
-                                                  const VkAllocationCallbacks *pAllocator, VkSwapchainKHR *pSwapchain) {
-    DispatchMapStruct *dispMap = get_dispatch_info(device);
+VKAPI_ATTR VkResult VKAPI_CALL CreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR* pCreateInfo,
+                                                  const VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchain) {
+    DispatchMapStruct* dispMap = get_dispatch_info(device);
     assert(dispMap);
-    VkuDeviceDispatchTable *pDisp = dispMap->device_dispatch_table;
+    VkuDeviceDispatchTable* pDisp = dispMap->device_dispatch_table;
 
     // This layer does an image copy later on, and the copy command expects the
     // transfer src bit to be on.
@@ -1511,13 +1511,13 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateSwapchainKHR(VkDevice device, const VkSwapc
     return result;
 }
 
-VKAPI_ATTR void DestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, const VkAllocationCallbacks *pAllocator) {
+VKAPI_ATTR void DestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, const VkAllocationCallbacks* pAllocator) {
     {
         PROFILE("screenshot.finish");
         std::unique_lock<std::mutex> lock(globalLock);
         // Wait for all related screenshots are done
         screenshotSavedCV.wait(lock, [&] {
-            for (const auto &data : screenshotsData) {
+            for (const auto& data : screenshotsData) {
                 if (data->swapchain == swapchain) {
                     return false;
                 }
@@ -1535,7 +1535,7 @@ VKAPI_ATTR void DestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, c
         if (swapchainMap.find(swapchain) != swapchainMap.end()) {
             // Free surface image cache entries related to this swapchain
             for (auto surface : swapchainMap[swapchain].imageList) {
-                auto &cache = screenshotDataCache[surface];
+                auto& cache = screenshotDataCache[surface];
                 for (auto cacheIt = cache.begin(); cacheIt != cache.end();) {
                     auto curCacheIt = cacheIt++;
                     if ((*curCacheIt)->swapchain == swapchain) {
@@ -1547,17 +1547,17 @@ VKAPI_ATTR void DestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, c
         }
     }
 
-    DispatchMapStruct *dispMap = get_dispatch_info(device);
+    DispatchMapStruct* dispMap = get_dispatch_info(device);
     assert(dispMap);
-    VkuDeviceDispatchTable *pDisp = dispMap->device_dispatch_table;
+    VkuDeviceDispatchTable* pDisp = dispMap->device_dispatch_table;
     pDisp->DestroySwapchainKHR(device, swapchain, pAllocator);
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL GetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain, uint32_t *pCount,
-                                                     VkImage *pSwapchainImages) {
-    DispatchMapStruct *dispMap = get_dispatch_info(device);
+VKAPI_ATTR VkResult VKAPI_CALL GetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain, uint32_t* pCount,
+                                                     VkImage* pSwapchainImages) {
+    DispatchMapStruct* dispMap = get_dispatch_info(device);
     assert(dispMap);
-    VkuDeviceDispatchTable *pDisp = dispMap->device_dispatch_table;
+    VkuDeviceDispatchTable* pDisp = dispMap->device_dispatch_table;
     VkResult result = pDisp->GetSwapchainImagesKHR(device, swapchain, pCount, pSwapchainImages);
     return result;
 }
@@ -1640,7 +1640,7 @@ void screenshotWriterThreadFunc() {
     shutdownScreenshotThread = false;
 }
 
-void onQueuePresentKHR(VkQueue queue, VkPresentInfoKHR &presentInfo) {
+void onQueuePresentKHR(VkQueue queue, VkPresentInfoKHR& presentInfo) {
     static int frameNumber = -1;
     ++frameNumber;
     if (!settings.isFrameToCapture(frameNumber)) {
@@ -1706,11 +1706,11 @@ void onQueuePresentKHR(VkQueue queue, VkPresentInfoKHR &presentInfo) {
     }
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
+VKAPI_ATTR VkResult VKAPI_CALL QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo) {
     VkPresentInfoKHR presentInfo = *pPresentInfo;
     onQueuePresentKHR(queue, presentInfo);
-    DispatchMapStruct *dispMap = get_dispatch_info((VkDevice)queue);
-    VkuDeviceDispatchTable *pDisp = dispMap->device_dispatch_table;
+    DispatchMapStruct* dispMap = get_dispatch_info((VkDevice)queue);
+    VkuDeviceDispatchTable* pDisp = dispMap->device_dispatch_table;
     assert(dispMap);
     VkResult result = pDisp->QueuePresentKHR(queue, &presentInfo);
     return result;
@@ -1723,34 +1723,34 @@ static const VkLayerProperties global_layer = {
     "Layer: screenshot",           // description
 };
 
-VKAPI_ATTR VkResult VKAPI_CALL EnumerateInstanceLayerProperties(uint32_t *pCount, VkLayerProperties *pProperties) {
+VKAPI_ATTR VkResult VKAPI_CALL EnumerateInstanceLayerProperties(uint32_t* pCount, VkLayerProperties* pProperties) {
     return util_GetLayerProperties(1, &global_layer, pCount, pProperties);
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceLayerProperties(VkPhysicalDevice physicalDevice, uint32_t *pCount,
-                                                              VkLayerProperties *pProperties) {
+VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceLayerProperties(VkPhysicalDevice physicalDevice, uint32_t* pCount,
+                                                              VkLayerProperties* pProperties) {
     return util_GetLayerProperties(1, &global_layer, pCount, pProperties);
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL EnumerateInstanceExtensionProperties(const char *pLayerName, uint32_t *pCount,
-                                                                    VkExtensionProperties *pProperties) {
+VKAPI_ATTR VkResult VKAPI_CALL EnumerateInstanceExtensionProperties(const char* pLayerName, uint32_t* pCount,
+                                                                    VkExtensionProperties* pProperties) {
     if (pLayerName && !strcmp(pLayerName, global_layer.layerName)) return util_GetExtensionProperties(0, NULL, pCount, pProperties);
 
     return VK_ERROR_LAYER_NOT_PRESENT;
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice, const char *pLayerName,
-                                                                  uint32_t *pCount, VkExtensionProperties *pProperties) {
+VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice, const char* pLayerName,
+                                                                  uint32_t* pCount, VkExtensionProperties* pProperties) {
     if (pLayerName && !strcmp(pLayerName, global_layer.layerName)) return util_GetExtensionProperties(0, NULL, pCount, pProperties);
 
     assert(physicalDevice);
 
-    VkuInstanceDispatchTable *pTable = instance_dispatch_table(physicalDevice);
+    VkuInstanceDispatchTable* pTable = instance_dispatch_table(physicalDevice);
     return pTable->EnumerateDeviceExtensionProperties(physicalDevice, pLayerName, pCount, pProperties);
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceToolPropertiesEXT(VkPhysicalDevice physicalDevice, uint32_t *pToolCount,
-                                                                  VkPhysicalDeviceToolPropertiesEXT *pToolProperties) {
+VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceToolPropertiesEXT(VkPhysicalDevice physicalDevice, uint32_t* pToolCount,
+                                                                  VkPhysicalDeviceToolPropertiesEXT* pToolProperties) {
     static const VkPhysicalDeviceToolPropertiesEXT screenshot_layer_tool_props = {
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TOOL_PROPERTIES_EXT,
         nullptr,
@@ -1767,7 +1767,7 @@ VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceToolPropertiesEXT(VkPhysicalDevi
         (*pToolCount)--;
     }
 
-    VkuInstanceDispatchTable *pInstanceTable = instance_dispatch_table(physicalDevice);
+    VkuInstanceDispatchTable* pInstanceTable = instance_dispatch_table(physicalDevice);
     VkResult result = pInstanceTable->GetPhysicalDeviceToolPropertiesEXT(physicalDevice, pToolCount, pToolProperties);
 
     if (original_pToolProperties != nullptr) {
@@ -1779,13 +1779,13 @@ VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceToolPropertiesEXT(VkPhysicalDevi
     return result;
 }
 
-static PFN_vkVoidFunction intercept_core_instance_command(const char *name);
+static PFN_vkVoidFunction intercept_core_instance_command(const char* name);
 
-static PFN_vkVoidFunction intercept_core_device_command(const char *name);
+static PFN_vkVoidFunction intercept_core_device_command(const char* name);
 
-static PFN_vkVoidFunction intercept_khr_swapchain_command(const char *name, VkDevice dev);
+static PFN_vkVoidFunction intercept_khr_swapchain_command(const char* name, VkDevice dev);
 
-VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetDeviceProcAddr(VkDevice dev, const char *funcName) {
+VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetDeviceProcAddr(VkDevice dev, const char* funcName) {
     PFN_vkVoidFunction proc = intercept_core_device_command(funcName);
     if (proc) return proc;
 
@@ -1796,15 +1796,15 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetDeviceProcAddr(VkDevice dev, const c
     proc = intercept_khr_swapchain_command(funcName, dev);
     if (proc) return proc;
 
-    DispatchMapStruct *dispMap = get_dispatch_info(dev);
+    DispatchMapStruct* dispMap = get_dispatch_info(dev);
     assert(dispMap);
-    VkuDeviceDispatchTable *pDisp = dispMap->device_dispatch_table;
+    VkuDeviceDispatchTable* pDisp = dispMap->device_dispatch_table;
 
     if (pDisp->GetDeviceProcAddr == NULL) return NULL;
     return pDisp->GetDeviceProcAddr(dev, funcName);
 }
 
-VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetInstanceProcAddr(VkInstance instance, const char *funcName) {
+VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetInstanceProcAddr(VkInstance instance, const char* funcName) {
     PFN_vkVoidFunction proc = intercept_core_instance_command(funcName);
     if (proc) return proc;
 
@@ -1814,14 +1814,14 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetInstanceProcAddr(VkInstance instance
     if (!proc) proc = intercept_khr_swapchain_command(funcName, VK_NULL_HANDLE);
     if (proc) return proc;
 
-    VkuInstanceDispatchTable *pTable = instance_dispatch_table(instance);
+    VkuInstanceDispatchTable* pTable = instance_dispatch_table(instance);
     if (pTable->GetInstanceProcAddr == NULL) return NULL;
     return pTable->GetInstanceProcAddr(instance, funcName);
 }
 
-static PFN_vkVoidFunction intercept_core_instance_command(const char *name) {
+static PFN_vkVoidFunction intercept_core_instance_command(const char* name) {
     static const struct {
-        const char *name;
+        const char* name;
         PFN_vkVoidFunction proc;
     } core_instance_commands[] = {
         {"vkGetInstanceProcAddr", reinterpret_cast<PFN_vkVoidFunction>(GetInstanceProcAddr)},
@@ -1843,9 +1843,9 @@ static PFN_vkVoidFunction intercept_core_instance_command(const char *name) {
     return nullptr;
 }
 
-static PFN_vkVoidFunction intercept_core_device_command(const char *name) {
+static PFN_vkVoidFunction intercept_core_device_command(const char* name) {
     static const struct {
-        const char *name;
+        const char* name;
         PFN_vkVoidFunction proc;
     } core_device_commands[] = {
         {"vkGetDeviceProcAddr", reinterpret_cast<PFN_vkVoidFunction>(GetDeviceProcAddr)},
@@ -1861,9 +1861,9 @@ static PFN_vkVoidFunction intercept_core_device_command(const char *name) {
     return nullptr;
 }
 
-static PFN_vkVoidFunction intercept_khr_swapchain_command(const char *name, VkDevice dev) {
+static PFN_vkVoidFunction intercept_khr_swapchain_command(const char* name, VkDevice dev) {
     static const struct {
-        const char *name;
+        const char* name;
         PFN_vkVoidFunction proc;
     } khr_swapchain_commands[] = {
         {"vkCreateSwapchainKHR", reinterpret_cast<PFN_vkVoidFunction>(CreateSwapchainKHR)},
@@ -1872,7 +1872,7 @@ static PFN_vkVoidFunction intercept_khr_swapchain_command(const char *name, VkDe
     };
 
     if (dev) {
-        DeviceMapStruct *devMap = get_device_info(dev);
+        DeviceMapStruct* devMap = get_device_info(dev);
         if (!devMap->wsi_enabled) return nullptr;
     }
 
@@ -1895,35 +1895,35 @@ static PFN_vkVoidFunction intercept_khr_swapchain_command(const char *name, VkDe
 
 // loader-layer interface v0, just wrappers since there is only a layer
 
-EXPORT_FUNCTION VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(uint32_t *pCount,
-                                                                                  VkLayerProperties *pProperties) {
+EXPORT_FUNCTION VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(uint32_t* pCount,
+                                                                                  VkLayerProperties* pProperties) {
     return screenshot::EnumerateInstanceLayerProperties(pCount, pProperties);
 }
 
-EXPORT_FUNCTION VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(VkPhysicalDevice physicalDevice, uint32_t *pCount,
-                                                                                VkLayerProperties *pProperties) {
+EXPORT_FUNCTION VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(VkPhysicalDevice physicalDevice, uint32_t* pCount,
+                                                                                VkLayerProperties* pProperties) {
     // the layer command handles VK_NULL_HANDLE just fine internally
     assert(physicalDevice == VK_NULL_HANDLE);
     return screenshot::EnumerateDeviceLayerProperties(VK_NULL_HANDLE, pCount, pProperties);
 }
 
-EXPORT_FUNCTION VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(const char *pLayerName, uint32_t *pCount,
-                                                                                      VkExtensionProperties *pProperties) {
+EXPORT_FUNCTION VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(const char* pLayerName, uint32_t* pCount,
+                                                                                      VkExtensionProperties* pProperties) {
     return screenshot::EnumerateInstanceExtensionProperties(pLayerName, pCount, pProperties);
 }
 
 EXPORT_FUNCTION VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice,
-                                                                                    const char *pLayerName, uint32_t *pCount,
-                                                                                    VkExtensionProperties *pProperties) {
+                                                                                    const char* pLayerName, uint32_t* pCount,
+                                                                                    VkExtensionProperties* pProperties) {
     // the layer command handles VK_NULL_HANDLE just fine internally
     assert(physicalDevice == VK_NULL_HANDLE);
     return screenshot::EnumerateDeviceExtensionProperties(VK_NULL_HANDLE, pLayerName, pCount, pProperties);
 }
 
-EXPORT_FUNCTION VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice dev, const char *funcName) {
+EXPORT_FUNCTION VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice dev, const char* funcName) {
     return screenshot::GetDeviceProcAddr(dev, funcName);
 }
 
-EXPORT_FUNCTION VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char *funcName) {
+EXPORT_FUNCTION VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char* funcName) {
     return screenshot::GetInstanceProcAddr(instance, funcName);
 }
