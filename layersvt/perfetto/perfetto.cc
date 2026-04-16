@@ -292,7 +292,7 @@ class FnvHasher {
   uint64_t result_ = kFnv1a64OffsetBasis;
 };
 
-// base::FnvHash uses base::FnvHasher for integer values and falls back to
+// base::FnvHash uses base::FnvHasher for integer values and falls base to
 // std::hash for other types. This is needed as std::hash for integers is just
 // the identity function and Perfetto uses open-addressing hash table, which are
 // very sensitive to hash quality and are known to degrade in performance
@@ -2427,7 +2427,7 @@ ssize_t WriteAllHandle(PlatformHandle, const void* buf, size_t count);
 ScopedFile OpenFile(const std::string& path,
                     int flags,
                     FileOpenMode = kFileModeInvalid);
-ScopedFstream OpenFstream(const std::string& path, const std::string& mode);
+ScopedFstream OpenFstream(const char* path, const char* mode);
 
 // This is an alias for close(). It's to avoid leaking windows.h in headers.
 // Exported because ScopedFile is used in the /include/ext API by Chromium
@@ -2523,7 +2523,6 @@ std::optional<uint64_t> GetFileSize(PlatformHandle fd);
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
 #define PERFETTO_SET_FILE_PERMISSIONS
 #include <fcntl.h>
@@ -2766,33 +2765,19 @@ ScopedFile OpenFile(const std::string& path, int flags, FileOpenMode mode) {
   return fd;
 }
 
-ScopedFstream OpenFstream(const std::string& path, const std::string& mode) {
+ScopedFstream OpenFstream(const char* path, const char* mode) {
   ScopedFstream file;
-  // On Windows fopen interprets filename using the ANSI or OEM codepage but
-  // sqlite3_value_text returns a UTF-8 string. To make sure we interpret the
-  // filename correctly we use _wfopen and a UTF-16 string on windows.
-  //
-  // On Windows fopen also open files in the text mode by default, but we want
-  // to open them in the binary mode, to avoid silly EOL translations (and to be
-  // consistent with base::OpenFile). So we check the mode first and append 'b'
-  // mode only when it makes sense.
+// On Windows fopen interprets filename using the ANSI or OEM codepage but
+// sqlite3_value_text returns a UTF-8 string. To make sure we interpret the
+// filename correctly we use _wfopen and a UTF-16 string on windows.
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
-  std::string s_mode(mode);
-  // Windows supports non-standard mode extension that sets encoding in text
-  // mode. If you need to open a FILE* in text mode, use the fopen API directly.
-  bool is_text_mode = Contains(s_mode, "ccs=") || Contains(s_mode, "t");
-  PERFETTO_CHECK(!is_text_mode);
-  bool is_binary_mode = Contains(s_mode, 'b');
-  if (!is_binary_mode)
-    s_mode += 'b';
-
   auto w_path = ToUtf16(path);
-  auto w_mode = ToUtf16(s_mode);
+  auto w_mode = ToUtf16(mode);
   if (w_path && w_mode) {
     file.reset(_wfopen(w_path->c_str(), w_mode->c_str()));
   }
 #else
-  file.reset(fopen(path.c_str(), mode.c_str()));
+  file.reset(fopen(path, mode));
 #endif
   return file;
 }
@@ -5793,7 +5778,6 @@ class PeriodicTask {
 // gen_amalgamated expanded: #include "perfetto/ext/base/file_utils.h"
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX_BUT_NOT_QNX) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) ||           \
     (PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) && __ANDROID_API__ >= 19)
 #include <sys/timerfd.h>
 #endif
@@ -5814,7 +5798,6 @@ uint32_t GetNextDelayMs(const TimeMillis& now_ms,
 
 ScopedPlatformHandle CreateTimerFd(const PeriodicTask::Args& args) {
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX_BUT_NOT_QNX) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) ||           \
     (PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) && __ANDROID_API__ >= 19)
   ScopedPlatformHandle tfd(
       timerfd_create(CLOCK_BOOTTIME, TFD_CLOEXEC | TFD_NONBLOCK));
@@ -6078,8 +6061,7 @@ namespace perfetto::base::flags {
         : NonAndroidPlatformDefault_FALSE)                             \
   X(use_rt_mutex, NonAndroidPlatformDefault_FALSE)                     \
   X(use_rt_futex, NonAndroidPlatformDefault_FALSE)                     \
-  X(buffer_clone_preserve_read_iter, NonAndroidPlatformDefault_TRUE)   \
-  X(sma_prevent_duplicate_immediate_flushes, NonAndroidPlatformDefault_TRUE)
+  X(buffer_clone_preserve_read_iter, NonAndroidPlatformDefault_TRUE)
 
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
@@ -6444,7 +6426,6 @@ void RtPosixMutex::unlock() noexcept {
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE) ||   \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
 #define PERFETTO_HAS_MMAP() 1
@@ -6484,7 +6465,6 @@ class ScopedMmap {
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
   // Takes ownership of an mmap()d area that starts at `data`, `size` bytes
   // long. `data` should not be MAP_FAILED.
@@ -6503,11 +6483,11 @@ class ScopedMmap {
 #endif
 };
 
-// Tries to open `file_path` and maps its first `length` bytes in memory.
-ScopedMmap ReadMmapFilePart(const std::string& file_path, size_t length);
+// Tries to open `fname` and maps its first `length` bytes in memory.
+ScopedMmap ReadMmapFilePart(const char* fname, size_t length);
 
-// Tries to open `file_path` and maps the whole file into memory.
-ScopedMmap ReadMmapWholeFile(const std::string& file_path);
+// Tries to open `fname` and maps the whole file into memory.
+ScopedMmap ReadMmapWholeFile(const char* fname);
 
 }  // namespace perfetto::base
 
@@ -6537,7 +6517,6 @@ ScopedMmap ReadMmapWholeFile(const std::string& file_path);
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
 #include <sys/mman.h>
 #include <unistd.h>
@@ -6548,20 +6527,19 @@ ScopedMmap ReadMmapWholeFile(const std::string& file_path);
 namespace perfetto::base {
 namespace {
 
-ScopedPlatformHandle OpenFileForMmap(const std::string& file_path) {
+ScopedPlatformHandle OpenFileForMmap(const char* fname) {
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
-  return OpenFile(file_path, O_RDONLY);
+  return OpenFile(fname, O_RDONLY);
 #elif PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
   // This does not use base::OpenFile to avoid getting an exclusive lock.
-  return ScopedPlatformHandle(
-      CreateFileA(file_path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
-                  OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+  return ScopedPlatformHandle(CreateFileA(fname, GENERIC_READ, FILE_SHARE_READ,
+                                          nullptr, OPEN_EXISTING,
+                                          FILE_ATTRIBUTE_NORMAL, nullptr));
 #else
   // mmap is not supported. Do not even open the file.
-  base::ignore_result(file_path);
+  base::ignore_result(fname);
   return ScopedPlatformHandle();
 #endif
 }
@@ -6599,7 +6577,6 @@ ScopedMmap ScopedMmap::FromHandle(base::ScopedPlatformHandle file,
   }
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
   void* ptr = mmap(nullptr, length, PROT_READ, MAP_PRIVATE, *file, 0);
   if (ptr != MAP_FAILED) {
@@ -6630,7 +6607,6 @@ bool ScopedMmap::reset() noexcept {
   bool ret = true;
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
   if (ptr_ != nullptr) {
     ret = munmap(ptr_, length_) == 0;
@@ -6649,7 +6625,6 @@ bool ScopedMmap::reset() noexcept {
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
 // static
 ScopedMmap ScopedMmap::InheritMmappedRange(void* data, size_t size) {
@@ -6660,11 +6635,11 @@ ScopedMmap ScopedMmap::InheritMmappedRange(void* data, size_t size) {
 }
 #endif
 
-ScopedMmap ReadMmapFilePart(const std::string& fname, size_t length) {
+ScopedMmap ReadMmapFilePart(const char* fname, size_t length) {
   return ScopedMmap::FromHandle(OpenFileForMmap(fname), length);
 }
 
-ScopedMmap ReadMmapWholeFile(const std::string& fname) {
+ScopedMmap ReadMmapWholeFile(const char* fname) {
   ScopedPlatformHandle file = OpenFileForMmap(fname);
   if (!file) {
     return ScopedMmap();
@@ -8829,20 +8804,15 @@ std::optional<int32_t> GetTimezoneOffsetMins() {
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE) ||   \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_FUCHSIA)
 #include <limits.h>
 #include <stdlib.h>  // For _exit()
-#include <unistd.h>  // For getpagesize() and geteuid() & fork() & sysconf()
+#include <unistd.h>  // For getpagesize() and geteuid() & fork()
 #endif
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
 #include <mach-o/dyld.h>
 #include <mach/vm_page_size.h>
-#endif
-
-#if PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD)
-#include <sys/sysctl.h>
 #endif
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX_BUT_NOT_QNX) || \
@@ -8982,8 +8952,6 @@ uint32_t GetSysPageSizeSlowpath() {
   page_size = static_cast<uint32_t>(page_size_int > 0 ? page_size_int : 4096);
 #elif PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
   page_size = static_cast<uint32_t>(vm_page_size);
-#elif PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD)
-  page_size = static_cast<uint32_t>(sysconf(_SC_PAGESIZE));
 #else
   page_size = 4096;
 #endif
@@ -9017,7 +8985,6 @@ void MaybeReleaseAllocatorMemToOS() {
 uid_t GetCurrentUserId() {
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
   return geteuid();
 #else
@@ -9048,7 +9015,6 @@ void UnsetEnv(const std::string& key) {
 void Daemonize(std::function<int()> parent_cb) {
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     (PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE) &&  \
      !PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE_TVOS))
   Pipe pipe = Pipe::Create(Pipe::kBothBlock);
@@ -9113,18 +9079,6 @@ std::string GetCurExecutablePath() {
   char buf[MAX_PATH];
   auto len = ::GetModuleFileNameA(nullptr /*current*/, buf, sizeof(buf));
   self_path = std::string(buf, len);
-#elif PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD)
-  char buf[PATH_MAX];
-  int mib[4], ret;
-  size_t len = sizeof(buf);
-  mib[0] = CTL_KERN;
-  mib[1] = KERN_PROC;
-  mib[2] = KERN_PROC_PATHNAME;
-  mib[3] = -1;
-  ret = sysctl(mib, 4, buf, &len, NULL, 0);
-  PERFETTO_CHECK(ret == 0);
-  // This returns the full path; need to trim the executable
-  self_path = std::string(buf);
 #else
   PERFETTO_FATAL(
       "GetCurExecutableDir() not implemented on the current platform");
@@ -12205,7 +12159,6 @@ std::string Subprocess::Args::GetCmdString() const {
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
 
 #include <fcntl.h>
@@ -13551,6 +13504,12 @@ ParseFieldResult ParseOneField(const uint8_t* const buffer,
                                const uint8_t* const end) {
   ParseFieldResult res{ParseFieldResult::kAbort, buffer, Field{}};
 
+  // The first byte of a proto field is structured as follows:
+  // The least 3 significant bits determine the field type.
+  // The most 5 significant bits determine the field id. If MSB == 1, the
+  // field id continues on the next bytes following the VarInt encoding.
+  const uint8_t kFieldTypeNumBits = 3;
+  const uint64_t kFieldTypeMask = (1 << kFieldTypeNumBits) - 1;  // 0000 0111;
   const uint8_t* pos = buffer;
 
   // If we've already hit the end, just return an invalid field.
@@ -13567,13 +13526,11 @@ ParseFieldResult ParseOneField(const uint8_t* const buffer,
     pos = next;
   }
 
-  uint32_t field_id =
-      static_cast<uint32_t>(proto_utils::GetTagFieldId(preamble));
+  uint32_t field_id = static_cast<uint32_t>(preamble >> kFieldTypeNumBits);
   if (field_id == 0 || pos >= end)
     return res;
 
-  auto field_type =
-      static_cast<uint8_t>(proto_utils::GetTagFieldType(preamble));
+  auto field_type = static_cast<uint8_t>(preamble & kFieldTypeMask);
   const uint8_t* new_pos = pos;
   uint64_t int_value = 0;
   uint64_t size = 0;
@@ -26453,8 +26410,7 @@ bool TraceConfig::operator==(const TraceConfig& other) const {
    && ::protozero::internal::gen_helpers::EqualsField(cmd_trace_start_delay_, other.cmd_trace_start_delay_)
    && ::protozero::internal::gen_helpers::EqualsField(session_semaphores_, other.session_semaphores_)
    && ::protozero::internal::gen_helpers::EqualsField(priority_boost_, other.priority_boost_)
-   && ::protozero::internal::gen_helpers::EqualsField(exclusive_prio_, other.exclusive_prio_)
-   && ::protozero::internal::gen_helpers::EqualsField(no_flush_before_write_into_file_, other.no_flush_before_write_into_file_);
+   && ::protozero::internal::gen_helpers::EqualsField(exclusive_prio_, other.exclusive_prio_);
 }
 
 int TraceConfig::buffers_size() const { return static_cast<int>(buffers_.size()); }
@@ -26599,9 +26555,6 @@ bool TraceConfig::ParseFromArray(const void* raw, size_t size) {
         break;
       case 41 /* exclusive_prio */:
         field.get(&exclusive_prio_);
-        break;
-      case 42 /* no_flush_before_write_into_file */:
-        field.get(&no_flush_before_write_into_file_);
         break;
       default:
         field.SerializeAndAppendTo(&unknown_fields_);
@@ -26807,11 +26760,6 @@ void TraceConfig::Serialize(::protozero::Message* msg) const {
   // Field 41: exclusive_prio
   if (_has_field_[41]) {
     ::protozero::internal::gen_helpers::SerializeVarInt(41, exclusive_prio_, msg);
-  }
-
-  // Field 42: no_flush_before_write_into_file
-  if (_has_field_[42]) {
-    ::protozero::internal::gen_helpers::SerializeTinyVarInt(42, no_flush_before_write_into_file_, msg);
   }
 
   protozero::internal::gen_helpers::SerializeUnknownFields(unknown_fields_, msg);
@@ -32393,7 +32341,9 @@ Screenshot& Screenshot::operator=(Screenshot&&) = default;
 
 bool Screenshot::operator==(const Screenshot& other) const {
   return ::protozero::internal::gen_helpers::EqualsField(unknown_fields_, other.unknown_fields_)
-   && ::protozero::internal::gen_helpers::EqualsField(jpg_image_, other.jpg_image_);
+   && ::protozero::internal::gen_helpers::EqualsField(jpg_image_, other.jpg_image_)
+   && ::protozero::internal::gen_helpers::EqualsField(pam_image_, other.pam_image_)
+   && ::protozero::internal::gen_helpers::EqualsField(ppm_image_, other.ppm_image_);
 }
 
 bool Screenshot::ParseFromArray(const void* raw, size_t size) {
@@ -32408,6 +32358,12 @@ bool Screenshot::ParseFromArray(const void* raw, size_t size) {
     switch (field.id()) {
       case 1 /* jpg_image */:
         field.get(&jpg_image_);
+        break;
+      case 2 /* pam_image */:
+        field.get(&pam_image_);
+        break;
+      case 3 /* ppm_image */:
+        field.get(&ppm_image_);
         break;
       default:
         field.SerializeAndAppendTo(&unknown_fields_);
@@ -32433,6 +32389,16 @@ void Screenshot::Serialize(::protozero::Message* msg) const {
   // Field 1: jpg_image
   if (_has_field_[1]) {
     ::protozero::internal::gen_helpers::SerializeString(1, jpg_image_, msg);
+  }
+
+  // Field 2: pam_image
+  if (_has_field_[2]) {
+    ::protozero::internal::gen_helpers::SerializeString(2, pam_image_, msg);
+  }
+
+  // Field 3: ppm_image
+  if (_has_field_[3]) {
+    ::protozero::internal::gen_helpers::SerializeString(3, ppm_image_, msg);
   }
 
   protozero::internal::gen_helpers::SerializeUnknownFields(unknown_fields_, msg);
@@ -33333,8 +33299,6 @@ bool TrackEvent::operator==(const TrackEvent& other) const {
    && ::protozero::internal::gen_helpers::EqualsField(correlation_id_, other.correlation_id_)
    && ::protozero::internal::gen_helpers::EqualsField(correlation_id_str_, other.correlation_id_str_)
    && ::protozero::internal::gen_helpers::EqualsField(correlation_id_str_iid_, other.correlation_id_str_iid_)
-   && ::protozero::internal::gen_helpers::EqualsField(callstack_, other.callstack_)
-   && ::protozero::internal::gen_helpers::EqualsField(callstack_iid_, other.callstack_iid_)
    && ::protozero::internal::gen_helpers::EqualsField(debug_annotations_, other.debug_annotations_)
    && ::protozero::internal::gen_helpers::EqualsField(task_execution_, other.task_execution_)
    && ::protozero::internal::gen_helpers::EqualsField(log_message_, other.log_message_)
@@ -33454,12 +33418,6 @@ bool TrackEvent::ParseFromArray(const void* raw, size_t size) {
         break;
       case 54 /* correlation_id_str_iid */:
         field.get(&correlation_id_str_iid_);
-        break;
-      case 55 /* callstack */:
-        (*callstack_).ParseFromArray(field.data(), field.size());
-        break;
-      case 56 /* callstack_iid */:
-        field.get(&callstack_iid_);
         break;
       case 4 /* debug_annotations */:
         debug_annotations_.emplace_back();
@@ -33657,16 +33615,6 @@ void TrackEvent::Serialize(::protozero::Message* msg) const {
   // Field 54: correlation_id_str_iid
   if (_has_field_[54]) {
     ::protozero::internal::gen_helpers::SerializeVarInt(54, correlation_id_str_iid_, msg);
-  }
-
-  // Field 55: callstack
-  if (_has_field_[55]) {
-    (*callstack_).Serialize(msg->BeginNestedMessage<::protozero::Message>(55));
-  }
-
-  // Field 56: callstack_iid
-  if (_has_field_[56]) {
-    ::protozero::internal::gen_helpers::SerializeVarInt(56, callstack_iid_, msg);
   }
 
   // Field 4: debug_annotations
@@ -33997,139 +33945,6 @@ void TrackEvent_LegacyEvent::Serialize(::protozero::Message* msg) const {
   protozero::internal::gen_helpers::SerializeUnknownFields(unknown_fields_, msg);
 }
 
-
-TrackEvent_Callstack::TrackEvent_Callstack() = default;
-TrackEvent_Callstack::~TrackEvent_Callstack() = default;
-TrackEvent_Callstack::TrackEvent_Callstack(const TrackEvent_Callstack&) = default;
-TrackEvent_Callstack& TrackEvent_Callstack::operator=(const TrackEvent_Callstack&) = default;
-TrackEvent_Callstack::TrackEvent_Callstack(TrackEvent_Callstack&&) noexcept = default;
-TrackEvent_Callstack& TrackEvent_Callstack::operator=(TrackEvent_Callstack&&) = default;
-
-bool TrackEvent_Callstack::operator==(const TrackEvent_Callstack& other) const {
-  return ::protozero::internal::gen_helpers::EqualsField(unknown_fields_, other.unknown_fields_)
-   && ::protozero::internal::gen_helpers::EqualsField(frames_, other.frames_);
-}
-
-int TrackEvent_Callstack::frames_size() const { return static_cast<int>(frames_.size()); }
-void TrackEvent_Callstack::clear_frames() { frames_.clear(); }
-TrackEvent_Callstack_Frame* TrackEvent_Callstack::add_frames() { frames_.emplace_back(); return &frames_.back(); }
-bool TrackEvent_Callstack::ParseFromArray(const void* raw, size_t size) {
-  frames_.clear();
-  unknown_fields_.clear();
-  bool packed_error = false;
-
-  ::protozero::ProtoDecoder dec(raw, size);
-  for (auto field = dec.ReadField(); field.valid(); field = dec.ReadField()) {
-    if (field.id() < _has_field_.size()) {
-      _has_field_.set(field.id());
-    }
-    switch (field.id()) {
-      case 1 /* frames */:
-        frames_.emplace_back();
-        frames_.back().ParseFromArray(field.data(), field.size());
-        break;
-      default:
-        field.SerializeAndAppendTo(&unknown_fields_);
-        break;
-    }
-  }
-  return !packed_error && !dec.bytes_left();
-}
-
-std::string TrackEvent_Callstack::SerializeAsString() const {
-  ::protozero::internal::gen_helpers::MessageSerializer msg;
-  Serialize(msg.get());
-  return msg.SerializeAsString();
-}
-
-std::vector<uint8_t> TrackEvent_Callstack::SerializeAsArray() const {
-  ::protozero::internal::gen_helpers::MessageSerializer msg;
-  Serialize(msg.get());
-  return msg.SerializeAsArray();
-}
-
-void TrackEvent_Callstack::Serialize(::protozero::Message* msg) const {
-  // Field 1: frames
-  for (auto& it : frames_) {
-    it.Serialize(msg->BeginNestedMessage<::protozero::Message>(1));
-  }
-
-  protozero::internal::gen_helpers::SerializeUnknownFields(unknown_fields_, msg);
-}
-
-
-TrackEvent_Callstack_Frame::TrackEvent_Callstack_Frame() = default;
-TrackEvent_Callstack_Frame::~TrackEvent_Callstack_Frame() = default;
-TrackEvent_Callstack_Frame::TrackEvent_Callstack_Frame(const TrackEvent_Callstack_Frame&) = default;
-TrackEvent_Callstack_Frame& TrackEvent_Callstack_Frame::operator=(const TrackEvent_Callstack_Frame&) = default;
-TrackEvent_Callstack_Frame::TrackEvent_Callstack_Frame(TrackEvent_Callstack_Frame&&) noexcept = default;
-TrackEvent_Callstack_Frame& TrackEvent_Callstack_Frame::operator=(TrackEvent_Callstack_Frame&&) = default;
-
-bool TrackEvent_Callstack_Frame::operator==(const TrackEvent_Callstack_Frame& other) const {
-  return ::protozero::internal::gen_helpers::EqualsField(unknown_fields_, other.unknown_fields_)
-   && ::protozero::internal::gen_helpers::EqualsField(function_name_, other.function_name_)
-   && ::protozero::internal::gen_helpers::EqualsField(source_file_, other.source_file_)
-   && ::protozero::internal::gen_helpers::EqualsField(line_number_, other.line_number_);
-}
-
-bool TrackEvent_Callstack_Frame::ParseFromArray(const void* raw, size_t size) {
-  unknown_fields_.clear();
-  bool packed_error = false;
-
-  ::protozero::ProtoDecoder dec(raw, size);
-  for (auto field = dec.ReadField(); field.valid(); field = dec.ReadField()) {
-    if (field.id() < _has_field_.size()) {
-      _has_field_.set(field.id());
-    }
-    switch (field.id()) {
-      case 1 /* function_name */:
-        ::protozero::internal::gen_helpers::DeserializeString(field, &function_name_);
-        break;
-      case 2 /* source_file */:
-        ::protozero::internal::gen_helpers::DeserializeString(field, &source_file_);
-        break;
-      case 3 /* line_number */:
-        field.get(&line_number_);
-        break;
-      default:
-        field.SerializeAndAppendTo(&unknown_fields_);
-        break;
-    }
-  }
-  return !packed_error && !dec.bytes_left();
-}
-
-std::string TrackEvent_Callstack_Frame::SerializeAsString() const {
-  ::protozero::internal::gen_helpers::MessageSerializer msg;
-  Serialize(msg.get());
-  return msg.SerializeAsString();
-}
-
-std::vector<uint8_t> TrackEvent_Callstack_Frame::SerializeAsArray() const {
-  ::protozero::internal::gen_helpers::MessageSerializer msg;
-  Serialize(msg.get());
-  return msg.SerializeAsArray();
-}
-
-void TrackEvent_Callstack_Frame::Serialize(::protozero::Message* msg) const {
-  // Field 1: function_name
-  if (_has_field_[1]) {
-    ::protozero::internal::gen_helpers::SerializeString(1, function_name_, msg);
-  }
-
-  // Field 2: source_file
-  if (_has_field_[2]) {
-    ::protozero::internal::gen_helpers::SerializeString(2, source_file_, msg);
-  }
-
-  // Field 3: line_number
-  if (_has_field_[3]) {
-    ::protozero::internal::gen_helpers::SerializeVarInt(3, line_number_, msg);
-  }
-
-  protozero::internal::gen_helpers::SerializeUnknownFields(unknown_fields_, msg);
-}
-
 }  // namespace perfetto
 }  // namespace protos
 }  // namespace gen
@@ -34299,8 +34114,6 @@ void TrackEvent_Callstack_Frame::Serialize(::protozero::Message* msg) const {
 // gen_amalgamated begin source: gen/protos/perfetto/trace/ftrace/fs.pbzero.cc
 // Intentionally empty (crbug.com/998165)
 // gen_amalgamated begin source: gen/protos/perfetto/trace/ftrace/ftrace.pbzero.cc
-// Intentionally empty (crbug.com/998165)
-// gen_amalgamated begin source: gen/protos/perfetto/trace/ftrace/fwtp_ftrace.pbzero.cc
 // Intentionally empty (crbug.com/998165)
 // gen_amalgamated begin source: gen/protos/perfetto/trace/ftrace/g2d.pbzero.cc
 // Intentionally empty (crbug.com/998165)
@@ -34873,10 +34686,9 @@ inline void GetProducerAndWriterID(ProducerAndWriterID x,
 // open in the service.
 static constexpr ProducerID kMaxProducerID = static_cast<ProducerID>(-1);
 
-// 32k Writers per producer seems a resonable bound. This reduces the ability
-// to memory-DoS the service by having to keep track of too many writer IDs,
-// but enough to run certain known benchmark workloads.
-static constexpr WriterID kMaxWriterID = static_cast<WriterID>((1 << 15) - 1);
+// 1024 Writers per producer seems a resonable bound. This reduces the ability
+// to memory-DoS the service by having to keep track of too many writer IDs.
+static constexpr WriterID kMaxWriterID = static_cast<WriterID>((1 << 10) - 1);
 
 // Unique within the scope of a {ProducerID, WriterID} tuple.
 using ChunkID = uint32_t;
@@ -36537,11 +36349,6 @@ class PERFETTO_EXPORT_COMPONENT ConsumerEndpoint {
     // If not zero, this is stored in the trace as the configured delay (in
     // milliseconds) of the trigger that caused the clone.
     uint64_t clone_trigger_delay_ms = 0;
-
-    // If valid, and the session that should be cloned is 'write_into_file'
-    // session, traced writes the cloned session content to this file
-    // descriptor, instead of writing it in the cloned session buffers.
-    base::ScopedFile output_file_fd;
   };
   virtual void CloneSession(CloneSessionArgs) = 0;
 
@@ -37327,13 +37134,6 @@ class SharedMemoryArbiterImpl : public SharedMemoryArbiter {
   // batching period.
   bool delayed_flush_scheduled_ = false;
 
-  // Indicates whether we have already scheduled an immediate flush due to the
-  // shared memory buffer being more than half full. Set to true when the first
-  // immediate flush is posted and cleared when the flush completes. This
-  // prevents posting multiple immediate flush tasks when chunks continue to be
-  // committed while the buffer remains over 50% full.
-  bool immediate_flush_scheduled_ = false;
-
   // Stores target buffer reservations for writers created via
   // CreateStartupTraceWriter(). A bound reservation sets
   // TargetBufferReservation::resolved to true and is associated with the actual
@@ -37725,7 +37525,6 @@ class TraceWriterImpl : public TraceWriter,
 // gen_amalgamated expanded: #include "perfetto/base/logging.h"
 // gen_amalgamated expanded: #include "perfetto/base/task_runner.h"
 // gen_amalgamated expanded: #include "perfetto/base/time.h"
-// gen_amalgamated expanded: #include "perfetto/ext/base/flags.h"
 // gen_amalgamated expanded: #include "perfetto/ext/tracing/core/commit_data_request.h"
 // gen_amalgamated expanded: #include "perfetto/ext/tracing/core/shared_memory.h"
 // gen_amalgamated expanded: #include "perfetto/ext/tracing/core/shared_memory_abi.h"
@@ -38088,20 +37887,9 @@ void SharedMemoryArbiterImpl::UpdateCommitDataRequest(
     // trace.
     if (fully_bound_ &&
         (last_patch_req || bytes_pending_commit_ >= shmem_abi_.size() / 2)) {
-      bool should_post_immediate_flush = true;
-      if (base::flags::sma_prevent_duplicate_immediate_flushes) {
-        // Only post an immediate flush task if we haven't already posted one.
-        // This prevents spamming the task runner with immediate flushes when
-        // the buffer remains over 50% full while chunks continue to be
-        // committed. See b/330580374.
-        should_post_immediate_flush = !immediate_flush_scheduled_;
-      }
-      if (should_post_immediate_flush) {
-        weak_this = weak_ptr_factory_.GetWeakPtr();
-        task_runner_to_post_delayed_callback_on = task_runner_;
-        flush_delay_ms = 0;
-        immediate_flush_scheduled_ = true;
-      }
+      weak_this = weak_ptr_factory_.GetWeakPtr();
+      task_runner_to_post_delayed_callback_on = task_runner_;
+      flush_delay_ms = 0;
     }
 
     // When using shmem emulation we commit the completed chunks immediately
@@ -38115,30 +37903,15 @@ void SharedMemoryArbiterImpl::UpdateCommitDataRequest(
         // Allow next call to UpdateCommitDataRequest to start
         // another batching period.
         delayed_flush_scheduled_ = false;
-        // We're flushing synchronously, so any scheduled immediate flush is
-        // no longer needed.
-        immediate_flush_scheduled_ = false;
         // We can't flush while holding the lock
         scoped_lock.unlock();
         FlushPendingCommitDataRequests();
       } else {
-        bool should_post_immediate_flush = true;
-        if (base::flags::sma_prevent_duplicate_immediate_flushes) {
-          // Only post an immediate flush task if we haven't already posted one.
-          // This prevents spamming the task runner with immediate flushes when
-          // the buffer remains over 50% full while chunks continue to be
-          // committed. See b/330580374.
-          should_post_immediate_flush = !immediate_flush_scheduled_;
-        }
-
         // Since we aren't on the |task_runner_| thread post a task instead,
         // in order to prevent non-overlaping commit data request flushes.
-        if (should_post_immediate_flush) {
-          weak_this = weak_ptr_factory_.GetWeakPtr();
-          task_runner_to_post_delayed_callback_on = task_runner_;
-          flush_delay_ms = 0;
-          immediate_flush_scheduled_ = true;
-        }
+        weak_this = weak_ptr_factory_.GetWeakPtr();
+        task_runner_to_post_delayed_callback_on = task_runner_;
+        flush_delay_ms = 0;
       }
     }
   }  // scoped_lock(lock_)
@@ -38153,11 +37926,9 @@ void SharedMemoryArbiterImpl::UpdateCommitDataRequest(
             return;
           {
             std::lock_guard<base::MaybeRtMutex> scoped_lock(weak_this->lock_);
-            // Clear |delayed_flush_scheduled_| and
-            // |immediate_flush_scheduled_|, allowing the next call to
+            // Clear |delayed_flush_scheduled_|, allowing the next call to
             // UpdateCommitDataRequest to start another batching period.
             weak_this->delayed_flush_scheduled_ = false;
-            weak_this->immediate_flush_scheduled_ = false;
           }
           weak_this->FlushPendingCommitDataRequests();
         },
@@ -39452,7 +39223,6 @@ class PERFETTO_EXPORT_COMPONENT Consumer {
     bool success;
     std::string error;
     base::Uuid uuid;  // UUID of the cloned session.
-    bool was_write_into_file;
   };
   virtual void OnSessionCloned(const OnSessionClonedArgs&);
 };
@@ -41759,7 +41529,6 @@ class TracingMuxerImpl : public TracingMuxer {
 // gen_amalgamated expanded: #include "perfetto/base/time.h"
 // gen_amalgamated expanded: #include "perfetto/ext/base/fnv_hash.h"
 // gen_amalgamated expanded: #include "perfetto/ext/base/thread_checker.h"
-// gen_amalgamated expanded: #include "perfetto/ext/base/utils.h"
 // gen_amalgamated expanded: #include "perfetto/ext/base/waitable_event.h"
 // gen_amalgamated expanded: #include "perfetto/ext/tracing/core/shared_memory_arbiter.h"
 // gen_amalgamated expanded: #include "perfetto/ext/tracing/core/trace_packet.h"
@@ -42196,7 +41965,7 @@ void TracingMuxerImpl::ConsumerImpl::OnConnect() {
     muxer_->QueryServiceState(session_id_, std::move(callback));
   }
   if (session_to_clone_) {
-    service_->CloneSession(std::move(*session_to_clone_));
+    service_->CloneSession(*session_to_clone_);
     session_to_clone_ = std::nullopt;
   }
 
@@ -43397,7 +43166,6 @@ void TracingMuxerImpl::StopDataSource_AsyncEnd(TracingBackendId backend_id,
       producer->service_->NotifyDataSourceStopped(instance_id);
   }
   producer->SweepDeadServices();
-  base::MaybeReleaseAllocatorMemToOS();
 }
 
 void TracingMuxerImpl::ClearDataSourceIncrementalState(
@@ -43722,14 +43490,14 @@ void TracingMuxerImpl::CloneTracingSession(
   // Multiple concurrent cloning isn't supported.
   PERFETTO_DCHECK(!consumer->clone_trace_callback_);
   consumer->clone_trace_callback_ = std::move(callback);
-  ConsumerEndpoint::CloneSessionArgs consumer_args;
+  ConsumerEndpoint::CloneSessionArgs consumer_args{};
   consumer_args.unique_session_name = args.unique_session_name;
   if (!consumer->connected_) {
     consumer->session_to_clone_ = std::move(consumer_args);
     return;
   }
   consumer->session_to_clone_ = std::nullopt;
-  consumer->service_->CloneSession(std::move(consumer_args));
+  consumer->service_->CloneSession(consumer_args);
 }
 
 void TracingMuxerImpl::ChangeTracingSessionConfig(
@@ -45428,7 +45196,6 @@ base::PlatformProcessId Platform::process_id_ = 0;
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_FUCHSIA) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
 
 // gen_amalgamated expanded: #include "perfetto/ext/base/file_utils.h"
@@ -45525,8 +45292,7 @@ std::string PlatformPosix::GetCurrentProcessName() {
   std::string cmdline;
   base::ReadFile("/proc/self/cmdline", &cmdline);
   return cmdline.substr(0, cmdline.find('\0'));
-#elif PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD)
+#elif PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
   return std::string(getprogname());
 #else
   return "unknown_producer";
@@ -46224,7 +45990,7 @@ protos::gen::TrackDescriptor ProcessTrack::Serialize() const {
           std::string(splitter.cur_token(), splitter.cur_token_size()));
     }
   }
-  // TODO(skyostil): Record command line on Windows, FreeBSD and Mac.
+  // TODO(skyostil): Record command line on Windows and Mac.
 #endif
   return desc;
 }
@@ -47215,10 +46981,9 @@ namespace perfetto::base {
 
 ClockSnapshotVector CaptureClockSnapshots() {
   ClockSnapshotVector snapshot_data;
-#if !PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE) &&   \
-    !PERFETTO_BUILDFLAG(PERFETTO_OS_WIN) &&     \
-    !PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) && \
-    !PERFETTO_BUILDFLAG(PERFETTO_OS_NACL) &&    \
+#if !PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE) && \
+    !PERFETTO_BUILDFLAG(PERFETTO_OS_WIN) &&   \
+    !PERFETTO_BUILDFLAG(PERFETTO_OS_NACL) &&  \
     !PERFETTO_BUILDFLAG(PERFETTO_OS_QNX)
   struct {
     clockid_t id;
@@ -47324,8 +47089,8 @@ const char* GetVersionCode();
 #ifndef GEN_PERFETTO_VERSION_GEN_H_
 #define GEN_PERFETTO_VERSION_GEN_H_
 
-#define PERFETTO_VERSION_STRING() "v53.0-20d8cb80b"
-#define PERFETTO_VERSION_SCM_REVISION() "20d8cb80b4d69967554f1033e7f49592ac639a3c"
+#define PERFETTO_VERSION_STRING() "v52.0-6d45f900c"
+#define PERFETTO_VERSION_SCM_REVISION() "6d45f900c1de947ef26a40dc9dff5141ac910294"
 
 #endif  // GEN_PERFETTO_VERSION_GEN_H_
 /*
@@ -49553,105 +49318,6 @@ class Histogram {
 // gen_amalgamated begin header: src/tracing/service/trace_buffer.h
 // gen_amalgamated begin header: include/perfetto/ext/base/flat_hash_map.h
 // gen_amalgamated begin header: include/perfetto/ext/base/murmur_hash.h
-// gen_amalgamated begin header: include/perfetto/ext/base/hash.h
-/*
- * Copyright (C) 2019 The Android Open Source Project
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-#ifndef INCLUDE_PERFETTO_EXT_BASE_HASH_H_
-#define INCLUDE_PERFETTO_EXT_BASE_HASH_H_
-
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-#include <optional>
-#include <tuple>
-#include <utility>
-
-namespace perfetto::base {
-
-// ============================================================================
-// Absl-style hash customization point
-// ============================================================================
-//
-// To make a type hashable with Perfetto hash functions, define a friend
-// function template:
-//
-//   template <typename H>
-//   friend H PerfettoHashValue(H h, const MyType& value) {
-//     return H::Combine(std::move(h), value.field1, value.field2);
-//   }
-//
-// This function will be found via ADL (Argument Dependent Lookup) when hashing
-// your type. No forward declaration is needed - ADL finds it in your type's
-// namespace.
-
-// ============================================================================
-// Built-in PerfettoHashValue implementations for common standard library
-// types. These allow standard library types to work seamlessly with the
-// absl-style hash API without requiring users to define their own
-// implementations.
-// ============================================================================
-
-// Hash function for std::optional - hashes the value if present, or a sentinel
-// if not.
-template <typename H, typename T>
-H PerfettoHashValue(H h, const std::optional<T>& value) {
-  if (value.has_value()) {
-    return H::Combine(H::Combine(std::move(h), true), *value);
-  }
-  return H::Combine(std::move(h), false, 0);
-}
-
-// Hash function for std::pair - combines hashes of both elements.
-template <typename H, typename T1, typename T2>
-H PerfettoHashValue(H h, const std::pair<T1, T2>& value) {
-  return H::Combine(std::move(h), value.first, value.second);
-}
-
-// Hash function for std::tuple - combines hashes of all elements.
-template <typename H, typename... Ts>
-H PerfettoHashValue(H h, const std::tuple<Ts...>& value) {
-  return std::apply(
-      [&h](const auto&... elements) {
-        return H::Combine(std::move(h), elements...);
-      },
-      value);
-}
-
-// Hash function for pointers - hashes the pointer value as an integer.
-template <typename H, typename T>
-H PerfettoHashValue(H h, const std::unique_ptr<T>& ptr) {
-  return H::Combine(std::move(h), ptr.get());
-}
-template <typename H, typename T>
-H PerfettoHashValue(H h, const std::shared_ptr<T>& ptr) {
-  return H::Combine(std::move(h), ptr.get());
-}
-
-// This is for using already-hashed key into std::unordered_map and avoid the
-// cost of re-hashing. Example:
-// unordered_map<uint64_t, Value, AlreadyHashed> my_map.
-template <typename T>
-struct AlreadyHashed {
-  size_t operator()(const T& x) const { return static_cast<size_t>(x); }
-};
-
-}  // namespace perfetto::base
-
-#endif  // INCLUDE_PERFETTO_EXT_BASE_HASH_H_
 /*
  * Copyright (C) 2019 The Android Open Source Project
  *
@@ -49675,14 +49341,11 @@ struct AlreadyHashed {
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <string>
-#include <string_view>
 #include <type_traits>
-#include <utility>
 
-// gen_amalgamated expanded: #include "perfetto/ext/base/hash.h"
-// gen_amalgamated expanded: #include "perfetto/ext/base/string_view.h"
 // gen_amalgamated expanded: #include "perfetto/public/compiler.h"
 
 // This file provides an implementation of the 64-bit MurmurHash2 algorithm,
@@ -49822,187 +49485,90 @@ Int NormalizeFloatToInt(Float value) {
   return res;
 }
 
-// Computes a 64-bit hash for a single built-in value without any combination.
-// This is the core primitive used by both MurmurHashValue and
-// MurmurHashCombiner::CombineOne for built-in types.
-//
-// NOTE: This function intentionally has no else branch for non-builtin types,
-// which will cause a compile error if called with an unsupported type. Callers
-// should check if the type is supported before calling this function.
-template <typename T>
-auto MurmurHashBuiltinValue(const T& value) {
-  if constexpr (std::is_enum_v<T>) {
-    return murmur_internal::MurmurHashMix(
-        static_cast<uint64_t>(static_cast<std::underlying_type_t<T>>(value)));
-  } else if constexpr (std::is_integral_v<T>) {
-    return murmur_internal::MurmurHashMix(static_cast<uint64_t>(value));
-  } else if constexpr (std::is_same_v<T, double>) {
-    return murmur_internal::MurmurHashMix(
-        murmur_internal::NormalizeFloatToInt<double, uint64_t>(value));
-  } else if constexpr (std::is_same_v<T, float>) {
-    return murmur_internal::MurmurHashMix(
-        murmur_internal::NormalizeFloatToInt<float, uint32_t>(value));
-  } else if constexpr (std::is_same_v<T, std::string> ||
-                       std::is_same_v<T, std::string_view> ||
-                       std::is_same_v<T, base::StringView>) {
-    return murmur_internal::MurmurHashBytes(value.data(), value.size());
-  } else if constexpr (std::is_same_v<T, const char*>) {
-    std::string_view view(value);
-    return murmur_internal::MurmurHashBytes(view.data(), view.size());
-  } else if constexpr (std::is_pointer_v<T>) {
-    return murmur_internal::MurmurHashMix(
-        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(value)));
-  } else {
-    struct InvalidBuiltin {};
-    return InvalidBuiltin{};
-  }
-}
-
-// Helper to check if a type has a built-in MurmurHash implementation.
-template <typename T>
-constexpr bool HasMurmurHashBuiltinValue() {
-  return std::is_same_v<decltype(MurmurHashBuiltinValue(std::declval<T>())),
-                        uint64_t>;
-}
-
-// Helper to check if two types are integeral and U is convertible to T.
-template <typename T, typename U>
-constexpr bool IsConvertibleIntegral() {
-  return std::is_integral_v<T> && std::is_integral_v<U> &&
-         std::is_convertible_v<U, T>;
-}
-
-// Helper to check if a type is string-like (i.e. string, c-string or string
-// views).
-template <typename T>
-constexpr bool IsStringLike() {
-  return std::is_same_v<T, std::string> ||
-         std::is_same_v<T, std::string_view> ||
-         std::is_same_v<T, base::StringView> || std::is_same_v<T, const char*>;
-}
-
-// Helper to check if heterogeneous lookup is allowed between T and U.
-// Only allows it for convertible integral types and string-like types.
-template <typename T, typename U>
-constexpr bool AllowsHeterogeneousLookup() {
-  return IsConvertibleIntegral<T, U>() ||
-         (IsStringLike<T>() && IsStringLike<U>());
-}
-
 }  // namespace murmur_internal
 
-// ============================================================================
-// MurmurHashCombiner - the core hasher state object
-// ============================================================================
+// std::hash<T> drop-in class which uses the core MurmurHash functions above to
+// produce a hash.
 //
+// Uses:
+//  1) MurmurHashMix for fixed size numeric types (integers, floats, doubles).
+//  2) MurmurHashBytes for string types (string, string_view) etc.
+//  3) Falls back to std::hash<T> for all other types.
+//     TODO(lalitm): create a absl-like API for allowing aribtrary types
+//     to be hashed without needing to override std::hash<T>.
+template <typename T>
+struct MurmurHash {
+  uint64_t operator()(const T& value) const {
+    if constexpr (std::is_integral_v<T>) {
+      return murmur_internal::MurmurHashMix(static_cast<uint64_t>(value));
+    } else if constexpr (std::is_same_v<T, double>) {
+      return murmur_internal::MurmurHashMix(
+          murmur_internal::NormalizeFloatToInt<double, uint64_t>(value));
+    } else if constexpr (std::is_same_v<T, float>) {
+      return murmur_internal::MurmurHashMix(
+          murmur_internal::NormalizeFloatToInt<float, uint32_t>(value));
+    } else if constexpr (std::is_same_v<T, std::string> ||
+                         std::is_same_v<T, std::string_view>) {
+      return murmur_internal::MurmurHashBytes(value.data(), value.size());
+    } else {
+      return std::hash<T>{}(value);
+    }
+  }
+};
+
+// Simple wrapper function around MurmurHash to improve clarity in callsites
+// to not have to instantiate the class and then call operator().
+template <typename T>
+uint64_t MurmurHashValue(const T& value) {
+  return MurmurHash<T>{}(value);
+}
+
 // A helper class to create a 64-bit MurmurHash from a series of
 // structured fields.
 //
-// This class supports both the absl-style hasher API and a direct
-// member Combine() method.
-//
-// Absl-style API (for custom types with PerfettoHashValue):
-//   template <typename H>
-//   friend H PerfettoHashValue(H h, const MyType& value) {
-//     return H::Combine(std::move(h), value.field1, value.field2);
-//   }
-//
-// Direct API (for simple hash combining):
-//   MurmurHashCombiner combiner;
-//   combiner.Combine(field1, field2, ...);
-//   return combiner.digest();
-//
 // IMPORTANT: This is NOT a true streaming hash. It is an order-dependent
 // combiner. It does not guarantee that hashing two concatenated chunks of data
-// will produce the same result as hashing them separately in sequence.
+// will produce the same result as hashing them separately in sequence. It is
+// designed exclusively for creating a hash from a fixed set of fields.
 class MurmurHashCombiner {
  public:
-  MurmurHashCombiner() = default;
+  MurmurHashCombiner() : hash_(kSeed) {}
 
-  // Static Combine - returns a new hasher with the combined state.
-  // This is used by the absl-style PerfettoHashValue API.
-  template <typename... Args>
-  static MurmurHashCombiner Combine(MurmurHashCombiner h, const Args&... args) {
-    h.Combine(args...);
-    return h;
-  }
-
-  // Member Combine - combines values into this hasher's state.
-  // This is a convenient API for directly combining multiple values.
-  // The combination is order-dependent.
+  // Combines the hash of one or more arguments into the combiner's state.
+  //
+  // This function uses a C++17 fold expression to hash each argument with
+  // `MurmurHashValue` and then mixes it into the current state via the private
+  // `Update` method. The combination is order-dependent.
   template <typename... Args>
   void Combine(const Args&... args) {
-    // Uses a C++17 fold expression with CombineOne for each argument.
-    (CombineOne(args), ...);
+    // A C++17 fold expression that calls our private Update for each hashed
+    // arg.
+    (Update(MurmurHashValue(args)), ...);
   }
 
   // Returns the digest (i.e. current state of the combiner).
-  uint64_t digest() const { return hash_; }
+  inline uint64_t digest() const { return hash_; }
 
  private:
-  // Combines a single value into the hasher state.
-  template <typename T>
-  void CombineOne(const T& value) {
-    if constexpr (murmur_internal::HasMurmurHashBuiltinValue<T>()) {
-      Update(murmur_internal::MurmurHashBuiltinValue(value));
-    } else {
-      // For custom types, use ADL to find the PerfettoHashValue function.
-      // This will cause a compile error with a clear message if the function
-      // is not defined.
-      hash_ = PerfettoHashValue(std::move(*this), value).digest();
-    }
-  }
-
   // Low-level update with a pre-computed hash value. This uses a fast,
   // order-dependent combination step inspired by the `hash_combine` function
   // in the Boost C++ libraries.
-  void Update(uint64_t piece_hash) {
+  inline void Update(uint64_t piece_hash) {
     hash_ ^= piece_hash + 0x9e3779b9 + (hash_ << 6) + (hash_ >> 2);
   }
 
   static constexpr uint64_t kSeed = 0xe17a1465U;
-  uint64_t hash_ = kSeed;
+  uint64_t hash_;
 };
 
 // Simple wrapper function around MurmurHashCombiner to improve clarity in
 // callsites to not have to instantiate the class, call Combine() then digest().
 template <typename... Args>
 uint64_t MurmurHashCombine(const Args&... value) {
-  return MurmurHashCombiner::Combine(MurmurHashCombiner{}, value...).digest();
+  MurmurHashCombiner combiner;
+  combiner.Combine(value...);
+  return combiner.digest();
 }
-
-// Simple wrapper function to compute a hash value for a single value.
-// This is the primitive hash operation that MurmurHash<T> delegates to.
-//
-// For built-in types (integers, floats, strings), this uses a fast path that
-// avoids the overhead of the MurmurHashCombiner. For custom types, it delegates
-// to MurmurHashCombiner which will use ADL to find the PerfettoHashValue.
-template <typename T>
-uint64_t MurmurHashValue(const T& value) {
-  if constexpr (murmur_internal::HasMurmurHashBuiltinValue<T>()) {
-    return murmur_internal::MurmurHashBuiltinValue(value);
-  } else {
-    return MurmurHashCombine(value);
-  }
-}
-
-// std::hash<T> drop-in class which uses MurmurHashValue as the primitive.
-// All specializations consistently delegate to MurmurHashValue.
-template <typename T>
-struct MurmurHash {
-  using is_transparent = void;
-
-  uint64_t operator()(const T& value) const { return MurmurHashValue(value); }
-
-  // Heterogeneous lookup support. Only allowed for types where it makes sense
-  // (e.g. string-like types and convertible integral types).
-  template <typename U>
-  auto operator()(const U& value) const
-      -> std::enable_if_t<murmur_internal::AllowsHeterogeneousLookup<T, U>(),
-                          uint64_t> {
-    return MurmurHashValue(value);
-  }
-};
 
 }  // namespace perfetto::base
 
@@ -50031,16 +49597,9 @@ struct MurmurHash {
 // gen_amalgamated expanded: #include "perfetto/ext/base/fnv_hash.h"
 // gen_amalgamated expanded: #include "perfetto/ext/base/murmur_hash.h"
 // gen_amalgamated expanded: #include "perfetto/ext/base/utils.h"
-// gen_amalgamated expanded: #include "perfetto/public/compiler.h"
 
 #include <algorithm>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
 #include <limits>
-#include <memory>
-#include <type_traits>
-#include <utility>
 
 namespace perfetto {
 namespace base {
@@ -50096,37 +49655,6 @@ struct QuadraticHalfProbe {
   }
 };
 
-// Non-templated base class to hold helpers for FlatHashMap.
-struct FlatHashMapBase {
- public:
-  // Helper to detect if a hasher has is_transparent defined.
-  template <typename, typename = void>
-  struct HasIsTransparent : std::false_type {};
-
-  template <typename H>
-  struct HasIsTransparent<H, std::void_t<typename H::is_transparent>>
-      : std::true_type {};
-
-  // Helper to check if a lookup key type K is allowed.
-  // Returns true if:
-  // 1. K can be implicitly converted to Key, OR
-  // 2. Hasher has is_transparent AND Hasher is invocable with K AND Key and K
-  // are equality comparable
-  template <typename K, typename Key, typename Hasher>
-  static constexpr bool IsLookupKeyAllowed() {
-    if constexpr (HasIsTransparent<Hasher>::value) {
-      return std::is_invocable_v<Hasher, const K&> &&
-             std::is_same_v<decltype(std::declval<const Key&>() ==
-                                     std::declval<const K&>()),
-                            bool>;
-    } else if constexpr (std::is_convertible_v<K, Key>) {
-      return true;
-    } else {
-      return false;
-    }
-  }
-};
-
 template <typename Key,
           typename Value,
           typename Hasher =
@@ -50135,7 +49663,7 @@ template <typename Key,
                                  base::FnvHash<Key>>,
           typename Probe = QuadraticProbe,
           bool AppendOnly = false>
-class FlatHashMap : protected FlatHashMapBase {
+class FlatHashMap {
  public:
   class Iterator {
    public:
@@ -50174,6 +49702,7 @@ class FlatHashMap : protected FlatHashMapBase {
     const FlatHashMap* map_ = nullptr;
     size_t idx_ = 0;
   };  // Iterator
+
   static constexpr int kDefaultLoadLimitPct = 75;
   explicit FlatHashMap(size_t initial_capacity = 0,
                        int load_limit_pct = kDefaultLoadLimitPct)
@@ -50302,16 +49831,14 @@ class FlatHashMap : protected FlatHashMapBase {
     return std::make_pair(value_idx, true);
   }
 
-  template <typename K = Key>
-  Value* Find(const K& key) const {
+  Value* Find(const Key& key) const {
     const size_t idx = FindInternal(key);
     if (idx == kNotFound)
       return nullptr;
     return &values_[idx];
   }
 
-  template <typename K = Key>
-  bool Erase(const K& key) {
+  bool Erase(const Key& key) {
     if (AppendOnly)
       PERFETTO_FATAL("Erase() not supported because AppendOnly=true");
     size_t idx = FindInternal(key);
@@ -50353,13 +49880,7 @@ class FlatHashMap : protected FlatHashMapBase {
   enum ReservedTags : uint8_t { kFreeSlot = 0, kTombstone = 1 };
   static constexpr size_t kNotFound = std::numeric_limits<size_t>::max();
 
-  template <typename K = Key>
-  size_t FindInternal(const K& key) const {
-    static_assert(
-        IsLookupKeyAllowed<K, Key, Hasher>(),
-        "Heterogeneous lookup requires Hasher to define is_transparent and "
-        "support hashing the lookup key type. For same-type lookup, Key and K "
-        "must match exactly.");
+  size_t FindInternal(const Key& key) const {
     const size_t key_hash = Hasher{}(key);
     const uint8_t tag = HashToTag(key_hash);
     PERFETTO_DCHECK((capacity_ & (capacity_ - 1)) == 0);  // Must be a pow2.
@@ -53050,9 +52571,6 @@ class TracingServiceImpl : public TracingService {
 
   // Reads all the tracing buffers from the tracing session `tsid` and writes
   // them into the associated file.
-  // If `async_flush_buffers_before_read` is `true` this function becomes
-  // asynchronous: immediately posts a `Flush` task and returns. Reads the
-  // buffers when the flush is done, inside the `FlushCallback`.
   //
   // Reads all the data in the buffers (or until the file is full) before
   // returning.
@@ -53062,8 +52580,7 @@ class TracingServiceImpl : public TracingService {
   // to be executed after write_period_ms.
   //
   // Returns false in case of error.
-  bool ReadBuffersIntoFile(TracingSessionID tsid,
-                           bool async_flush_buffers_before_read);
+  bool ReadBuffersIntoFile(TracingSessionID);
 
   void FreeBuffers(TracingSessionID tsid, const std::string& error = {});
 
@@ -53180,7 +52697,6 @@ class TracingServiceImpl : public TracingService {
     bool skip_trace_filter = false;
     std::optional<TriggerInfo> clone_trigger;
     int64_t clone_started_timestamp_ns = 0;
-    base::ScopedFile output_file_fd;
   };
 
   // Holds the state of a tracing session. A tracing session is uniquely bound
@@ -53544,8 +53060,7 @@ class TracingServiceImpl : public TracingService {
                                   bool final_flush_outcome,
                                   std::optional<TriggerInfo> clone_trigger,
                                   base::Uuid*,
-                                  int64_t clone_started_timestamp_ns,
-                                  base::ScopedFile output_file_fd);
+                                  int64_t clone_started_timestamp_ns);
   void OnFlushDoneForClone(TracingSessionID src_tsid,
                            PendingCloneID clone_id,
                            const std::set<BufferID>& buf_ids,
@@ -53762,7 +53277,6 @@ inline base::StatusOr<base::SchedPolicyAndPrio> CreateSchedPolicyFromConfig(
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
 #define PERFETTO_HAS_CHMOD
 #include <sys/stat.h>
@@ -53774,7 +53288,6 @@ inline base::StatusOr<base::SchedPolicyAndPrio> CreateSchedPolicyFromConfig(
 // gen_amalgamated expanded: #include "perfetto/ext/base/android_utils.h"
 // gen_amalgamated expanded: #include "perfetto/ext/base/clock_snapshots.h"
 // gen_amalgamated expanded: #include "perfetto/ext/base/file_utils.h"
-// gen_amalgamated expanded: #include "perfetto/ext/base/flags.h"
 // gen_amalgamated expanded: #include "perfetto/ext/base/metatrace.h"
 // gen_amalgamated expanded: #include "perfetto/ext/base/string_utils.h"
 // gen_amalgamated expanded: #include "perfetto/ext/base/string_view.h"
@@ -55135,13 +54648,8 @@ void TracingServiceImpl::StartTracing(TracingSessionID tsid) {
 
   // Start the periodic drain tasks if we should to save the trace into a file.
   if (tracing_session->config.write_into_file()) {
-    bool async_flush_buffers_before_read =
-        !tracing_session->config.no_flush_before_write_into_file();
-    weak_runner_.PostDelayedTask(
-        [this, tsid, async_flush_buffers_before_read] {
-          ReadBuffersIntoFile(tsid, async_flush_buffers_before_read);
-        },
-        DelayToNextWritePeriodMs(*tracing_session));
+    weak_runner_.PostDelayedTask([this, tsid] { ReadBuffersIntoFile(tsid); },
+                                 DelayToNextWritePeriodMs(*tracing_session));
   }
 
   // Start the periodic flush tasks if the config specified a flush period.
@@ -55239,6 +54747,9 @@ void TracingServiceImpl::DisableTracing(TracingSessionID tsid,
     return;
   }
 
+  MaybeLogUploadEvent(tracing_session->config, tracing_session->trace_uuid,
+                      PerfettoStatsdAtom::kTracedDisableTracing);
+
   switch (tracing_session->state) {
     // Spurious call to DisableTracing() while already disabled, nothing to do.
     case TracingSession::DISABLED:
@@ -55270,21 +54781,6 @@ void TracingServiceImpl::DisableTracing(TracingSessionID tsid,
 
     // This is the nominal case, continues below.
     case TracingSession::STARTED:
-      // Log the disable tracing event only when the session was actually
-      // started. This avoids double-logging in scenarios where DisableTracing
-      // is called multiple times for the same session. A common case is with
-      // traces that have a timeout (e.g. using `trigger_timeout_ms`):
-      // 1. The service's timer expires and it calls `DisableTracing`
-      // internally.
-      // 2. The service notifies the consumer (e.g. `perfetto_cmd`) that the
-      //    trace has ended.
-      // 3. The consumer, as part of its cleanup, calls `FreeBuffers()`.
-      // 4. `FreeBuffers()` on the service-side calls `DisableTracing()` again
-      //    as a safeguard.
-      // By logging only when transitioning from the `STARTED` state, we ensure
-      // we only log the effective disable event.
-      MaybeLogUploadEvent(tracing_session->config, tracing_session->trace_uuid,
-                          PerfettoStatsdAtom::kTracedDisableTracing);
       break;
   }
 
@@ -55687,9 +55183,7 @@ void TracingServiceImpl::DisableTracingNotifyConsumerAndFlushFile(
 
   if (tracing_session->write_into_file) {
     tracing_session->write_period_ms = 0;
-    // Buffers are scraped, no need to flush before reading into file.
-    ReadBuffersIntoFile(tracing_session->id,
-                        /* async_flush_buffers_before_read = */ false);
+    ReadBuffersIntoFile(tracing_session->id);
   }
 
   MaybeLogUploadEvent(tracing_session->config, tracing_session->trace_uuid,
@@ -56175,9 +55669,7 @@ bool TracingServiceImpl::ReadBuffersIntoConsumer(
   return true;
 }
 
-bool TracingServiceImpl::ReadBuffersIntoFile(
-    TracingSessionID tsid,
-    bool async_flush_buffers_before_read) {
+bool TracingServiceImpl::ReadBuffersIntoFile(TracingSessionID tsid) {
   PERFETTO_DCHECK_THREAD(thread_checker_);
   TracingSession* tracing_session = GetTracingSession(tsid);
   if (!tracing_session) {
@@ -56194,62 +55686,35 @@ bool TracingServiceImpl::ReadBuffersIntoFile(
   if (IsWaitingForTrigger(tracing_session))
     return false;
 
-  auto do_read_buffers_into_file_fn =
-      [this, tsid](bool async_flush_buffers_before_read) {
-        TracingSession* tracing_session = GetTracingSession(tsid);
-        if (!tracing_session)
-          return;
-        // ReadBuffers() can allocate memory internally, for filtering. By
-        // limiting the data that ReadBuffers() reads to kWriteIntoChunksSize
-        // per iteration, we limit the amount of memory used on each iteration.
-        //
-        // It would be tempting to split this into multiple tasks like in
-        // ReadBuffersIntoConsumer, but that's not currently possible.
-        // ReadBuffersIntoFile has to read the whole available data before
-        // returning, to support the disable_immediately=true code paths.
-        bool has_more = true;
-        bool stop_writing_into_file = false;
-        do {
-          std::vector<TracePacket> packets =
-              ReadBuffers(tracing_session, kWriteIntoFileChunkSize, &has_more);
+  // ReadBuffers() can allocate memory internally, for filtering. By limiting
+  // the data that ReadBuffers() reads to kWriteIntoChunksSize per iteration,
+  // we limit the amount of memory used on each iteration.
+  //
+  // It would be tempting to split this into multiple tasks like in
+  // ReadBuffersIntoConsumer, but that's not currently possible.
+  // ReadBuffersIntoFile has to read the whole available data before returning,
+  // to support the disable_immediately=true code paths.
+  bool has_more = true;
+  bool stop_writing_into_file = false;
+  do {
+    std::vector<TracePacket> packets =
+        ReadBuffers(tracing_session, kWriteIntoFileChunkSize, &has_more);
 
-          stop_writing_into_file =
-              WriteIntoFile(tracing_session, std::move(packets));
-        } while (has_more && !stop_writing_into_file);
+    stop_writing_into_file = WriteIntoFile(tracing_session, std::move(packets));
+  } while (has_more && !stop_writing_into_file);
 
-        // Ensure all data was written to the file.
-        base::FlushFile(tracing_session->write_into_file.get());
-
-        if (stop_writing_into_file || tracing_session->write_period_ms == 0) {
-          tracing_session->write_into_file.reset();
-          tracing_session->write_period_ms = 0;
-          if (tracing_session->state == TracingSession::STARTED)
-            DisableTracing(tsid);
-          return;
-        }
-
-        weak_runner_.PostDelayedTask(
-            [this, tsid, async_flush_buffers_before_read] {
-              ReadBuffersIntoFile(tsid, async_flush_buffers_before_read);
-            },
-            DelayToNextWritePeriodMs(*tracing_session));
-      };
-
-  if (async_flush_buffers_before_read) {
-    Flush(
-        tsid, 0,
-        [do_read_buffers_into_file_fn](bool success) {
-          if (!success)
-            PERFETTO_ELOG("ReadBuffersIntoFile flush timed out");
-          do_read_buffers_into_file_fn(
-              /* async_flush_buffers_before_read= */ true);
-        },
-        FlushFlags(FlushFlags::Initiator::kTraced,
-                   FlushFlags::Reason::kPeriodic));
-  } else {
-    do_read_buffers_into_file_fn(/* async_flush_buffers_before_read= */ false);
+  if (stop_writing_into_file || tracing_session->write_period_ms == 0) {
+    // Ensure all data was written to the file before we close it.
+    base::FlushFile(tracing_session->write_into_file.get());
+    tracing_session->write_into_file.reset();
+    tracing_session->write_period_ms = 0;
+    if (tracing_session->state == TracingSession::STARTED)
+      DisableTracing(tsid);
+    return true;
   }
 
+  weak_runner_.PostDelayedTask([this, tsid] { ReadBuffersIntoFile(tsid); },
+                               DelayToNextWritePeriodMs(*tracing_session));
   return true;
 }
 
@@ -56649,7 +56114,7 @@ void TracingServiceImpl::FreeBuffers(TracingSessionID tsid,
           [weak_consumer = clone_op.weak_consumer] {
             if (weak_consumer) {
               weak_consumer->consumer_->OnSessionCloned(
-                  {false, "Original session ended", {}, false});
+                  {false, "Original session ended", {}});
             }
           });
     }
@@ -57910,38 +57375,6 @@ base::Status TracingServiceImpl::FlushAndCloneSession(
     return PERFETTO_SVC_ERR("Not allowed to clone a session from another UID");
   }
 
-  // The new logic we use to clone 'write_into_file' session relies on the
-  // 'buffer_clone_preserve_read_iter' flag being true; see b/448604718.
-  //
-  // The old logic ignored |session->write_into_file| when doing clone.
-  // Therefore, if the 'buffer_clone_preserve_read_iter' flag is false, we
-  // ignore the file to make the new logic behave like the old logic.
-  bool clone_session_write_into_file =
-      base::flags::buffer_clone_preserve_read_iter && session->write_into_file;
-
-  if (clone_session_write_into_file) {
-    if (!args.output_file_fd) {
-      return PERFETTO_SVC_ERR(
-          "Failed to clone 'write_into_file' session: a file descriptor is "
-          "required to copy existing file");
-    }
-    base::FlushFile(*session->write_into_file);
-    base::Status status =
-        base::CopyFileContents(*session->write_into_file, *args.output_file_fd);
-    if (!status.ok()) {
-      return PERFETTO_SVC_ERR(
-          "Failed to clone 'write_into_file' session: failed to copy existing "
-          "file: %s",
-          status.c_message());
-    }
-  } else {
-    // The client always sends a FD because when it asks to CloneSession,
-    // it doesn't know if the session being cloned is WIF or not. If it's
-    // not we should just ignore the file, the client will readback via IPC
-    // as usual in that case.
-    args.output_file_fd.reset();
-  }
-
   // If any of the buffers are marked as clear_before_clone, reset them before
   // issuing the Flush(kCloneReason).
   size_t buf_idx = 0;
@@ -57993,9 +57426,6 @@ base::Status TracingServiceImpl::FlushAndCloneSession(
         args.clone_trigger_boot_time_ns, args.clone_trigger_name,
         args.clone_trigger_producer_name,
         args.clone_trigger_trusted_producer_uid, args.clone_trigger_delay_ms};
-  }
-  if (args.output_file_fd) {
-    clone_op.output_file_fd = std::move(args.output_file_fd);
   }
 
   // Issue separate flush requests for separate buffer groups. The buffer marked
@@ -58083,7 +57513,6 @@ void TracingServiceImpl::OnFlushDoneForClone(TracingSessionID tsid,
     result = PERFETTO_SVC_ERR("Buffer allocation failed");
   }
 
-  bool was_write_into_file = false;
   if (result.ok()) {
     UpdateMemoryGuardrail();
 
@@ -58096,19 +57525,17 @@ void TracingServiceImpl::OnFlushDoneForClone(TracingSessionID tsid,
                  final_flush_outcome);
 
     if (clone_op.weak_consumer) {
-      was_write_into_file = static_cast<bool>(clone_op.output_file_fd);
       result = FinishCloneSession(
           &*clone_op.weak_consumer, tsid, std::move(clone_op.buffers),
           std::move(clone_op.buffer_cloned_timestamps),
           clone_op.skip_trace_filter, !clone_op.flush_failed,
-          clone_op.clone_trigger, &uuid, clone_op.clone_started_timestamp_ns,
-          std::move(clone_op.output_file_fd));
+          clone_op.clone_trigger, &uuid, clone_op.clone_started_timestamp_ns);
     }
   }  // if (result.ok())
 
   if (clone_op.weak_consumer) {
     clone_op.weak_consumer->consumer_->OnSessionCloned(
-        {result.ok(), result.message(), uuid, was_write_into_file});
+        {result.ok(), result.message(), uuid});
   }
 
   src->pending_clones.erase(it);
@@ -58163,8 +57590,7 @@ base::Status TracingServiceImpl::FinishCloneSession(
     bool final_flush_outcome,
     std::optional<TriggerInfo> clone_trigger,
     base::Uuid* new_uuid,
-    int64_t clone_started_timestamp_ns,
-    base::ScopedFile output_file_fd) {
+    int64_t clone_started_timestamp_ns) {
   PERFETTO_DLOG("CloneSession(%" PRIu64
                 ", skip_trace_filter=%d) started, consumer uid: %d",
                 src_tsid, skip_trace_filter, static_cast<int>(consumer->uid_));
@@ -58271,14 +57697,6 @@ base::Status TracingServiceImpl::FinishCloneSession(
   cloned_session->final_flush_outcome = final_flush_outcome
                                             ? TraceStats::FINAL_FLUSH_SUCCEEDED
                                             : TraceStats::FINAL_FLUSH_FAILED;
-  if (output_file_fd) {
-    cloned_session->write_into_file = std::move(output_file_fd);
-    cloned_session->write_period_ms = 0;
-    // Buffers are flushed, no need to flush again before reading into file.
-    ReadBuffersIntoFile(cloned_session->id,
-                        /* async_flush_buffers_before_read= */ false);
-  }
-
   return base::OkStatus();
 }
 
@@ -58644,7 +58062,7 @@ void TracingServiceImpl::ConsumerEndpointImpl::CloneSession(
   base::Status result = service_->FlushAndCloneSession(this, std::move(args));
 
   if (!result.ok()) {
-    consumer_->OnSessionCloned({false, result.message(), {}, false});
+    consumer_->OnSessionCloned({false, result.message(), {}});
   }
 }
 
@@ -59214,8 +58632,7 @@ bool CloneSessionResponse::operator==(const CloneSessionResponse& other) const {
    && ::protozero::internal::gen_helpers::EqualsField(success_, other.success_)
    && ::protozero::internal::gen_helpers::EqualsField(error_, other.error_)
    && ::protozero::internal::gen_helpers::EqualsField(uuid_msb_, other.uuid_msb_)
-   && ::protozero::internal::gen_helpers::EqualsField(uuid_lsb_, other.uuid_lsb_)
-   && ::protozero::internal::gen_helpers::EqualsField(was_write_into_file_, other.was_write_into_file_);
+   && ::protozero::internal::gen_helpers::EqualsField(uuid_lsb_, other.uuid_lsb_);
 }
 
 bool CloneSessionResponse::ParseFromArray(const void* raw, size_t size) {
@@ -59239,9 +58656,6 @@ bool CloneSessionResponse::ParseFromArray(const void* raw, size_t size) {
         break;
       case 4 /* uuid_lsb */:
         field.get(&uuid_lsb_);
-        break;
-      case 5 /* was_write_into_file */:
-        field.get(&was_write_into_file_);
         break;
       default:
         field.SerializeAndAppendTo(&unknown_fields_);
@@ -59282,11 +58696,6 @@ void CloneSessionResponse::Serialize(::protozero::Message* msg) const {
   // Field 4: uuid_lsb
   if (_has_field_[4]) {
     ::protozero::internal::gen_helpers::SerializeVarInt(4, uuid_lsb_, msg);
-  }
-
-  // Field 5: was_write_into_file
-  if (_has_field_[5]) {
-    ::protozero::internal::gen_helpers::SerializeTinyVarInt(5, was_write_into_file_, msg);
   }
 
   protozero::internal::gen_helpers::SerializeUnknownFields(unknown_fields_, msg);
@@ -64236,8 +63645,7 @@ struct sockaddr_vm {
 #include <unistd.h>
 #endif
 
-#if PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD)
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
 #include <sys/ucred.h>
 #endif
 
@@ -64603,8 +64011,7 @@ UnixSocketRaw::UnixSocketRaw(ScopedSocketHandle fd,
                              SockType type)
     : fd_(std::move(fd)), family_(family), type_(type) {
   PERFETTO_CHECK(fd_);
-#if PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD)
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
   const int no_sigpipe = 1;
   setsockopt(*fd_, SOL_SOCKET, SO_NOSIGPIPE, &no_sigpipe, sizeof(no_sigpipe));
 #endif
@@ -65233,8 +64640,7 @@ void UnixSocket::ReadPeerCredentialsPosix() {
   PERFETTO_CHECK(res == 0);
   peer_uid_ = user_cred.uid;
   peer_pid_ = user_cred.pid;
-#elif PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD)
+#elif PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
   struct xucred user_cred;
   socklen_t len = sizeof(user_cred);
   int res = getsockopt(sock_raw_.fd(), 0, LOCAL_PEERCRED, &user_cred, &len);
@@ -67515,7 +66921,6 @@ base::MachineID GenerateMachineID(base::UnixSocket* sock,
 uid_t HostImpl::ClientConnection::GetPosixPeerUid() const {
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
   if (sock->family() == base::SockFamily::kUnix)
     return sock->peer_uid_posix();
@@ -68755,7 +68160,6 @@ void RelayPortProxy::SyncClock(const SyncClockRequest& request, DeferredSyncCloc
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
 #include <unistd.h>
 #endif
@@ -69032,7 +68436,6 @@ base::ScopedFile CreateMemfd(const char*, unsigned int) {
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_FUCHSIA) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_WASM)
 
 #include <stddef.h>
@@ -69113,7 +68516,6 @@ class PosixSharedMemory : public SharedMemory {
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_FUCHSIA) || \
-    PERFETTO_BUILDFLAG(PERFETTO_OS_FREEBSD) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_WASM)
 
 #include <fcntl.h>
@@ -70113,17 +69515,6 @@ void ConsumerIPCClientImpl::CloneSession(CloneSessionArgs args) {
     return;
   }
 
-#if PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
-  if (args.output_file_fd) {
-    consumer_->OnSessionCloned(
-        {false,
-         "Passing FDs into CloneSession is not supported on Windows",
-         {},
-         false});
-    return;
-  }
-#endif
-
   protos::gen::CloneSessionRequest req;
   if (args.tsid) {
     req.set_session_id(args.tsid);
@@ -70161,18 +69552,14 @@ void ConsumerIPCClientImpl::CloneSession(CloneSessionArgs args) {
           // If the IPC fails, we are talking to an older version of the service
           // that didn't support CloneSession at all.
           weak_this->consumer_->OnSessionCloned(
-              {false, "CloneSession IPC not supported", {}, false});
+              {false, "CloneSession IPC not supported", {}});
         } else {
           base::Uuid uuid(response->uuid_lsb(), response->uuid_msb());
           weak_this->consumer_->OnSessionCloned(
-              {response->success(), response->error(), uuid,
-               response->was_write_into_file()});
+              {response->success(), response->error(), uuid});
         }
       });
-  // |args.output_file_fd| will be closed when this function returns, but it's
-  // fine because the IPC layer dup()'s it when sending the IPC.
-  consumer_port_.CloneSession(req, std::move(async_response),
-                              *args.output_file_fd);
+  consumer_port_.CloneSession(req, std::move(async_response));
 }
 }  // namespace perfetto
 // gen_amalgamated begin source: src/tracing/ipc/producer/producer_ipc_client_impl.cc
@@ -71567,9 +70954,6 @@ void ConsumerIPCService::CloneSession(
   if (req.has_clone_trigger_delay_ms()) {
     args.clone_trigger_delay_ms = req.clone_trigger_delay_ms();
   }
-  // The client (perfetto_cmd) always sends the file descriptor, but the traced
-  // uses it only if the session to clone is 'write_into_file' session.
-  args.output_file_fd = ipc::Service::TakeReceivedFD();
   remote_consumer->service_endpoint->CloneSession(std::move(args));
 }
 
@@ -71732,7 +71116,6 @@ void ConsumerIPCService::RemoteConsumer::OnSessionCloned(
   resp->set_error(args.error);
   resp->set_uuid_msb(args.uuid.msb());
   resp->set_uuid_lsb(args.uuid.lsb());
-  resp->set_was_write_into_file(args.was_write_into_file);
   std::move(clone_session_response).Resolve(std::move(resp));
 }
 
