@@ -34,6 +34,8 @@
 #include <vector>
 #include <mutex>
 #include <fstream>
+#include <sstream>
+#include <ostream>
 #include <thread>
 #include <condition_variable>
 
@@ -48,6 +50,7 @@ using namespace std;
 #include "vk_layer_table.h"
 
 #include "screenshot_parsing.h"
+#include "perfetto/perfetto_helpers.h"
 
 #ifdef ANDROID
 #include <android/trace.h>
@@ -413,6 +416,7 @@ static void init_screenshot(const VkInstanceCreateInfo* pCreateInfo, const VkAll
                              &layerSettingSet);
 
     settings.init(layerSettingSet);
+    InitializePerfetto();
 
     // Init global layer setting set with pFirstCreateInfo as nullptr.
     // We are checking for settings changes at runtime and pFirstCreateInfo is const.
@@ -496,14 +500,8 @@ VkQueue getQueueForScreenshot(VkDevice device) {
     return queue;
 }
 
-// Writes image to a PAM file.
-bool writePAM(const char* filename, const char* pixels, uint32_t width, uint32_t height, uint32_t numChannels, uint32_t rowPitch) {
-    PROFILE("writePAM");
-    std::ofstream file(filename, ios::binary);
-    if (!file.is_open()) {
-        return false;
-    }
-
+static void writePAMStream(std::ostream& file, const char* pixels, uint32_t width, uint32_t height, uint32_t numChannels,
+                           uint32_t rowPitch) {
     file << "P7\n";
     file << "WIDTH " << width << "\n";
     file << "HEIGHT " << height << "\n";
@@ -520,19 +518,22 @@ bool writePAM(const char* filename, const char* pixels, uint32_t width, uint32_t
             pixels += rowPitch;
         }
     }
-    file.close();
-    return true;
 }
 
-// Writes image to a PPM file.
-bool writePPM(const char* filename, const char* pixels, uint32_t width, uint32_t height, uint32_t numChannels, uint32_t rowPitch) {
-    PROFILE("writePPM");
-
+// Writes image to a PAM file.
+bool writePAM(const char* filename, const char* pixels, uint32_t width, uint32_t height, uint32_t numChannels, uint32_t rowPitch) {
+    PROFILE("writePAM");
     std::ofstream file(filename, ios::binary);
     if (!file.is_open()) {
         return false;
     }
+    writePAMStream(file, pixels, width, height, numChannels, rowPitch);
+    file.close();
+    return true;
+}
 
+static void writePPMStream(std::ostream& file, const char* pixels, uint32_t width, uint32_t height, uint32_t numChannels,
+                           uint32_t rowPitch) {
     file << "P6\n";
     file << width << "\n";
     file << height << "\n";
@@ -558,6 +559,17 @@ bool writePPM(const char* filename, const char* pixels, uint32_t width, uint32_t
             pixels += rowPitch;
         }
     }
+}
+
+// Writes image to a PPM file.
+bool writePPM(const char* filename, const char* pixels, uint32_t width, uint32_t height, uint32_t numChannels, uint32_t rowPitch) {
+    PROFILE("writePPM");
+
+    std::ofstream file(filename, ios::binary);
+    if (!file.is_open()) {
+        return false;
+    }
+    writePPMStream(file, pixels, width, height, numChannels, rowPitch);
     file.close();
     return true;
 }
@@ -1232,14 +1244,52 @@ static bool writeScreenshot(ScreenshotQueueData& data) {
 
     bool writeResult;
     switch (settings.screenshotExtension) {
-        case Settings::ScreenshotExtension::PPM:
+        case Settings::ScreenshotExtension::PPM: {
             fileName += ".ppm";
+            ScreenshotDataSource::Trace([&](ScreenshotDataSource::TraceContext ctx) {
+                {
+                    auto packet = ctx.NewTracePacket();
+                    packet->set_timestamp(perfetto::base::GetBootTimeNs().count());
+                    auto track_event = packet->set_track_event();
+                    track_event->set_name("Screenshot");
+
+                    auto* annotation = track_event->add_debug_annotations();
+                    annotation->set_name("frame_number");
+                    annotation->set_uint_value(data.frameNumber);
+
+                    std::stringstream ss;
+                    writePPMStream(ss, pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
+                    std::string s = ss.str();
+                    track_event->set_screenshot()->set_ppm_image(reinterpret_cast<const uint8_t*>(s.data()), s.size());
+                }
+                ctx.Flush();
+            });
             writeResult = writePPM(fileName.c_str(), pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
             break;
-        case Settings::ScreenshotExtension::PAM:
+        }
+        case Settings::ScreenshotExtension::PAM: {
             fileName += ".pam";
+            ScreenshotDataSource::Trace([&](ScreenshotDataSource::TraceContext ctx) {
+                {
+                    auto packet = ctx.NewTracePacket();
+                    packet->set_timestamp(perfetto::base::GetBootTimeNs().count());
+                    auto track_event = packet->set_track_event();
+                    track_event->set_name("Screenshot");
+
+                    auto* annotation = track_event->add_debug_annotations();
+                    annotation->set_name("frame_number");
+                    annotation->set_uint_value(data.frameNumber);
+
+                    std::stringstream ss;
+                    writePAMStream(ss, pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
+                    std::string s = ss.str();
+                    track_event->set_screenshot()->set_pam_image(reinterpret_cast<const uint8_t*>(s.data()), s.size());
+                }
+                ctx.Flush();
+            });
             writeResult = writePAM(fileName.c_str(), pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
             break;
+        }
     }
 
     if (data.image3 == VK_NULL_HANDLE) {
@@ -1417,13 +1467,16 @@ VKAPI_ATTR void VKAPI_CALL DestroyDevice(VkDevice device, const VkAllocationCall
     VkuDeviceDispatchTable* pDisp = dispMap->device_dispatch_table;
     pDisp->DestroyDevice(device, pAllocator);
 
-    std::lock_guard<std::mutex> lg(globalLock);
-    delete pDisp;
-    delete dispMap;
-    delete devMap;
+    {
+        std::unique_lock<std::mutex> lock(globalLock);
 
-    deviceMap.erase(device);
-    dispatchMap.erase(device);
+        delete pDisp;
+        delete dispMap;
+        delete devMap;
+
+        deviceMap.erase(device);
+        dispatchMap.erase(device);
+    }
 }
 
 VKAPI_ATTR void VKAPI_CALL GetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue* pQueue) {
@@ -1590,7 +1643,7 @@ void screenshotWriterThreadFunc() {
                     pauseFileRecorded = true;
                 }
                 // Make sure we don't wait on the CPU thread if we are shutting down, will deadlock.
-                if (shutdownScreenshotThread) break;
+                if (shutdownScreenshotThread && screenshotsData.empty()) break;
                 screenshotQueuedCV.wait(lock);
             }
             if (screenshotsData.empty()) continue;

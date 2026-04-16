@@ -111,6 +111,8 @@ if(BUILD_SCREENSHOT)
         screenshot.cpp
         screenshot_parsing.cpp
         screenshot_parsing.h
+        perfetto/perfetto.cc
+        perfetto/perfetto_helpers.cpp
         vk_layer_table.cpp
         vk_layer_table.h
         screenshot_layer.md
