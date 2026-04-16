@@ -172,12 +172,17 @@ foreach(layer ${TOOL_LAYERS})
         target_link_Libraries(${layer} PRIVATE log android atomic)
     endif()
 
+    if (WIN32)
+        target_link_Libraries(${layer} PRIVATE ws2_32)
+    endif()
+
     target_include_directories(${layer} PRIVATE .)
 
     if (MSVC)
         target_link_options(${layer} PRIVATE /DEF:${CMAKE_CURRENT_SOURCE_DIR}/${layer}.def)
     elseif(MINGW)
         target_sources(${layer} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/${layer}.def)
+        target_compile_definitions(${layer} PRIVATE uid_t=int)
     endif()
 
     if (APPLE)
