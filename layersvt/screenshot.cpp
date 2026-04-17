@@ -421,14 +421,12 @@ void startScreenshotThread() {
 }
 
 static void init_screenshot(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator) {
-    static std::once_flag perfetto_init_flag;
     std::lock_guard<std::mutex> lg(globalLock);
     VkuLayerSettingSet layerSettingSet;
     vkuCreateLayerSettingSet("VK_LAYER_LUNARG_screenshot", vkuFindLayerSettingsCreateInfo(pCreateInfo), pAllocator, nullptr,
                              &layerSettingSet);
 
     settings.init(layerSettingSet);
-    std::call_once(perfetto_init_flag, []() { InitializeScreenshotsPerfetto(); });
 
     if (settings.writerType == Settings::WriterType::PERFETTO) {
         screenshotWriter = std::make_unique<PerfettoScreenshotWriter>();
@@ -843,16 +841,6 @@ bool screenshot::FileScreenshotWriter::write(const char* pixels, int width, int 
     return true;
 }
 
-void FileScreenshotWriter::updatePauseState(bool paused, bool queueEmpty) {
-    if (!paused && pauseFileRecorded) {
-        std::remove(settings.pauseFileName.c_str());
-        pauseFileRecorded = false;
-    }
-    if (paused && queueEmpty && !pauseFileRecorded) {
-        std::ofstream pauseFile(settings.pauseFileName.c_str());
-        pauseFileRecorded = true;
-    }
-}
 
 void FileScreenshotWriter::setInProgress() {
     std::remove(settings.pauseFileName.c_str());
@@ -877,6 +865,11 @@ void FileScreenshotWriter::updateLayerSettings(VkuLayerSettingSet layerSettingSe
     }
 }
 
+screenshot::PerfettoScreenshotWriter::PerfettoScreenshotWriter() {
+    static std::once_flag perfetto_init_flag;
+    std::call_once(perfetto_init_flag, []() { InitializeScreenshotsPerfetto(); });
+}
+
 bool screenshot::PerfettoScreenshotWriter::write(const char* pixels, int width, int height, int numChannels, int rowPitch,
                                                  int frameNumber) {
     ScreenshotDataSource::Trace([&](ScreenshotDataSource::TraceContext ctx) {
@@ -893,20 +886,17 @@ bool screenshot::PerfettoScreenshotWriter::write(const char* pixels, int width, 
         static std::stringstream ss;
         ss.seekp(0);
         ss.clear();
+        std::string_view view;
         switch (settings.screenshotExtension) {
             case Settings::ScreenshotExtension::PPM:
                 writePPM(ss, pixels, width, height, numChannels, rowPitch);
-                {
-                    std::string_view view = ss.view();
-                    track_event->set_screenshot()->set_ppm_image(reinterpret_cast<const uint8_t*>(view.data()), view.size());
-                }
+                view = ss.view();
+                track_event->set_screenshot()->set_ppm_image(reinterpret_cast<const uint8_t*>(view.data()), view.size());
                 break;
             case Settings::ScreenshotExtension::PAM:
                 writePAM(ss, pixels, width, height, numChannels, rowPitch);
-                {
-                    std::string_view view = ss.view();
-                    track_event->set_screenshot()->set_pam_image(reinterpret_cast<const uint8_t*>(view.data()), view.size());
-                }
+                view = ss.view();
+                track_event->set_screenshot()->set_pam_image(reinterpret_cast<const uint8_t*>(view.data()), view.size());
                 break;
         }
     });
@@ -928,9 +918,9 @@ bool PerfettoScreenshotWriter::isPaused() const {
     return pauseFileRecorded;
 }
 
-namespace screenshot {
-// Definition moved to screenshots_perfetto_helpers.cpp
-}  // namespace screenshot
+
+
+
 std::list<std::shared_ptr<ScreenshotQueueData>> screenshotsData;
 std::unordered_map<VkImage, std::list<std::shared_ptr<ScreenshotQueueData>>> screenshotDataCache;
 
@@ -1706,6 +1696,10 @@ void screenshotWriterThreadFunc() {
             PROFILE(paused ? "paused" : "Waiting for CPU")
             std::unique_lock<std::mutex> lock(globalLock);
 
+            if (!paused && screenshotWriter->isPaused()) {
+                screenshotWriter->setInProgress();
+            }
+
             if (screenshotsData.empty()) {
                 if (paused && !screenshotWriter->isPaused()) {
                     screenshotWriter->setInPause();
@@ -1768,13 +1762,9 @@ void onQueuePresentKHR(VkQueue queue, VkPresentInfoKHR& presentInfo) {
         return;
     }
 
-    if (settings.writerType == Settings::WriterType::PERFETTO) {
-        bool enabled = false;
-        ScreenshotDataSource::Trace([&](ScreenshotDataSource::TraceContext ctx) { enabled = true; });
-        if (!enabled) return;
-    }
 
-    if (std::atomic_load(&pauseCapture)) {
+
+    if (std::atomic_load(&pauseCapture) && screenshotWriter->canControlPause()) {
         // Wake up screenshot thread to check whether we should unpause screenshot recording
         screenshotQueuedCV.notify_one();
         return;
