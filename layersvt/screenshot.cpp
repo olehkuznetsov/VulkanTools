@@ -1241,6 +1241,7 @@ static bool writeScreenshot(ScreenshotQueueData& data) {
             packet->set_timestamp(perfetto::base::GetBootTimeNs().count());
             auto track_event = packet->set_track_event();
             track_event->set_name("Screenshot");
+            track_event->set_type(::perfetto::protos::pbzero::TrackEvent::TYPE_INSTANT);
 
             auto* annotation = track_event->add_debug_annotations();
             annotation->set_name("frame_number");
