@@ -501,21 +501,21 @@ VkQueue getQueueForScreenshot(VkDevice device) {
     return queue;
 }
 
-static void writePAMStream(std::ostream& file, const char* pixels, uint32_t width, uint32_t height, uint32_t numChannels,
-                           uint32_t rowPitch) {
-    file << "P7\n";
-    file << "WIDTH " << width << "\n";
-    file << "HEIGHT " << height << "\n";
-    file << "DEPTH " << numChannels << "\n";
-    file << "MAXVAL " << 255 << "\n";
-    file << "TUPLTYPE " << (numChannels == 3 ? "RGB" : "RGB_ALPHA") << "\n";
-    file << "ENDHDR\n";
+static void writePAM(std::ostream& stream, const char* pixels, uint32_t width, uint32_t height, uint32_t numChannels,
+                     uint32_t rowPitch) {
+    stream << "P7\n";
+    stream << "WIDTH " << width << "\n";
+    stream << "HEIGHT " << height << "\n";
+    stream << "DEPTH " << numChannels << "\n";
+    stream << "MAXVAL " << 255 << "\n";
+    stream << "TUPLTYPE " << (numChannels == 3 ? "RGB" : "RGB_ALPHA") << "\n";
+    stream << "ENDHDR\n";
 
     if (numChannels * width == rowPitch) {
-        file.write(pixels, height * rowPitch);
+        stream.write(pixels, height * rowPitch);
     } else {
         for (uint32_t y = 0; y < height; y++) {
-            file.write(pixels, numChannels * width);
+            stream.write(pixels, numChannels * width);
             pixels += rowPitch;
         }
     }
@@ -528,21 +528,21 @@ bool writePAM(const char* filename, const char* pixels, uint32_t width, uint32_t
     if (!file.is_open()) {
         return false;
     }
-    writePAMStream(file, pixels, width, height, numChannels, rowPitch);
+    writePAM(file, pixels, width, height, numChannels, rowPitch);
     file.close();
     return true;
 }
 
-static void writePPMStream(std::ostream& file, const char* pixels, uint32_t width, uint32_t height, uint32_t numChannels,
-                           uint32_t rowPitch) {
-    file << "P6\n";
-    file << width << "\n";
-    file << height << "\n";
-    file << 255 << "\n";
+static void writePPM(std::ostream& stream, const char* pixels, uint32_t width, uint32_t height, uint32_t numChannels,
+                     uint32_t rowPitch) {
+    stream << "P6\n";
+    stream << width << "\n";
+    stream << height << "\n";
+    stream << 255 << "\n";
 
     if (3 == numChannels) {
         for (uint32_t y = 0; y < height; y++) {
-            file.write(pixels, 3 * width);
+            stream.write(pixels, 3 * width);
             pixels += rowPitch;
         }
     } else if (4 == numChannels) {
@@ -556,7 +556,7 @@ static void writePPMStream(std::ostream& file, const char* pixels, uint32_t widt
                 *reinterpret_cast<uint32_t*>(destRow) = *srcRow++;
                 destRow += 3;
             }
-            file.write(reinterpret_cast<const char*>(tempRowBuffer.data()), 3 * width);
+            stream.write(reinterpret_cast<const char*>(tempRowBuffer.data()), 3 * width);
             pixels += rowPitch;
         }
     }
@@ -570,7 +570,7 @@ bool writePPM(const char* filename, const char* pixels, uint32_t width, uint32_t
     if (!file.is_open()) {
         return false;
     }
-    writePPMStream(file, pixels, width, height, numChannels, rowPitch);
+    writePPM(file, pixels, width, height, numChannels, rowPitch);
     file.close();
     return true;
 }
@@ -1235,6 +1235,39 @@ static bool writeScreenshot(ScreenshotQueueData& data) {
 
     pixels += srLayout.offset;
 
+    ScreenshotDataSource::Trace([&](ScreenshotDataSource::TraceContext ctx) {
+        {
+            auto packet = ctx.NewTracePacket();
+            packet->set_timestamp(perfetto::base::GetBootTimeNs().count());
+            auto track_event = packet->set_track_event();
+            track_event->set_name("Screenshot");
+
+            auto* annotation = track_event->add_debug_annotations();
+            annotation->set_name("frame_number");
+            annotation->set_uint_value(data.frameNumber);
+
+            static std::stringstream ss;
+            ss.str("");
+            ss.clear();
+            switch (settings.screenshotExtension) {
+                case Settings::ScreenshotExtension::PPM:
+                    writePPM(ss, pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
+                    {
+                        std::string s = ss.str();
+                        track_event->set_screenshot()->set_ppm_image(reinterpret_cast<const uint8_t*>(s.data()), s.size());
+                    }
+                    break;
+                case Settings::ScreenshotExtension::PAM:
+                    writePAM(ss, pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
+                    {
+                        std::string s = ss.str();
+                        track_event->set_screenshot()->set_pam_image(reinterpret_cast<const uint8_t*>(s.data()), s.size());
+                    }
+                    break;
+            }
+        }
+    });
+
     string fileName;
     if (settings.targetFolder.empty()) {
         fileName = to_string(data.frameNumber);
@@ -1243,54 +1276,16 @@ static bool writeScreenshot(ScreenshotQueueData& data) {
         fileName += "/" + to_string(data.frameNumber);
     }
 
-    bool writeResult;
+    bool writeResult = false;
+    fileName += (settings.screenshotExtension == Settings::ScreenshotExtension::PAM) ? ".pam" : ".ppm";
+
     switch (settings.screenshotExtension) {
-        case Settings::ScreenshotExtension::PPM: {
-            fileName += ".ppm";
-            ScreenshotDataSource::Trace([&](ScreenshotDataSource::TraceContext ctx) {
-                {
-                    auto packet = ctx.NewTracePacket();
-                    packet->set_timestamp(perfetto::base::GetBootTimeNs().count());
-                    auto track_event = packet->set_track_event();
-                    track_event->set_name("Screenshot");
-
-                    auto* annotation = track_event->add_debug_annotations();
-                    annotation->set_name("frame_number");
-                    annotation->set_uint_value(data.frameNumber);
-
-                    std::stringstream ss;
-                    writePPMStream(ss, pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
-                    std::string s = ss.str();
-                    track_event->set_screenshot()->set_ppm_image(reinterpret_cast<const uint8_t*>(s.data()), s.size());
-                }
-                ctx.Flush();
-            });
+        case Settings::ScreenshotExtension::PPM:
             writeResult = writePPM(fileName.c_str(), pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
             break;
-        }
-        case Settings::ScreenshotExtension::PAM: {
-            fileName += ".pam";
-            ScreenshotDataSource::Trace([&](ScreenshotDataSource::TraceContext ctx) {
-                {
-                    auto packet = ctx.NewTracePacket();
-                    packet->set_timestamp(perfetto::base::GetBootTimeNs().count());
-                    auto track_event = packet->set_track_event();
-                    track_event->set_name("Screenshot");
-
-                    auto* annotation = track_event->add_debug_annotations();
-                    annotation->set_name("frame_number");
-                    annotation->set_uint_value(data.frameNumber);
-
-                    std::stringstream ss;
-                    writePAMStream(ss, pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
-                    std::string s = ss.str();
-                    track_event->set_screenshot()->set_pam_image(reinterpret_cast<const uint8_t*>(s.data()), s.size());
-                }
-                ctx.Flush();
-            });
+        case Settings::ScreenshotExtension::PAM:
             writeResult = writePAM(fileName.c_str(), pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
             break;
-        }
     }
 
     if (data.image3 == VK_NULL_HANDLE) {
