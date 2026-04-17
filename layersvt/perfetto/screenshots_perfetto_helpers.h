@@ -13,9 +13,6 @@
 #include <android/log.h>
 #endif
 
-// Define categories used for Perfetto tracing in the screenshot layer.
-PERFETTO_DEFINE_CATEGORIES(perfetto::Category("VulkanScreenshots").SetDescription("Vulkan Layer Screenshots"));
-
 namespace screenshot {
 struct ScreenshotQueueData;
 extern std::atomic_bool pauseCapture;
