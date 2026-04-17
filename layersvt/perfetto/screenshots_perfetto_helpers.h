@@ -7,6 +7,7 @@
 #include <list>
 #include <memory>
 #include <atomic>
+#include <thread>
 
 #ifdef ANDROID
 #include <android/log.h>
@@ -25,24 +26,8 @@ extern std::list<std::shared_ptr<ScreenshotQueueData>> screenshotsData;
 
 class ScreenshotDataSource : public perfetto::DataSource<ScreenshotDataSource> {
    public:
-    void OnStart(const StartArgs&) override {
-#ifdef ANDROID
-        __android_log_print(ANDROID_LOG_INFO, "screenshot", "ScreenshotDataSource::OnStart called");
-#endif
-        std::atomic_store(&screenshot::pauseCapture, false);
-    }
-
-    void OnStop(const StopArgs& args) override {
-#ifdef ANDROID
-        __android_log_print(ANDROID_LOG_INFO, "screenshot", "ScreenshotDataSource::OnStop called");
-#endif
-        std::atomic_store(&screenshot::pauseCapture, true);
-
-        std::unique_lock<std::mutex> lock(screenshot::globalLock);
-        screenshot::screenshotSavedCV.wait(lock, [] { return screenshot::screenshotsData.empty(); });
-
-        args.HandleStopAsynchronously();
-    }
+    void OnStart(const StartArgs&) override;
+    void OnStop(const StopArgs& args) override;
 };
 
 void InitializeScreenshotsPerfetto();

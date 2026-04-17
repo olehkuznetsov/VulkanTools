@@ -20,6 +20,7 @@
  * Author: Tony Barbour <tony@lunarg.com>
  */
 #include <vulkan/utility/vk_format_utils.h>
+#include <memory>
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -51,6 +52,8 @@ using namespace std;
 
 #include "screenshot_parsing.h"
 #include "perfetto/screenshots_perfetto_helpers.h"
+#include "screenshot_writer.h"
+#include <string_view>
 
 #ifdef ANDROID
 #include <android/trace.h>
@@ -133,8 +136,8 @@ class Settings {
     enum class ScreenshotExtension { PPM, PAM };
     ScreenshotExtension screenshotExtension = ScreenshotExtension::PPM;
 
-    enum class WriterType { FILE, PERFETTO, BOTH };
-    WriterType writerType = WriterType::BOTH;
+    enum class WriterType { FILE, PERFETTO };
+    WriterType writerType = WriterType::FILE;
 
     // Result screenshot scale. ScreenshotSize = scalePercent * FrameBufferSize / 100;
     int scalePercent = 100;
@@ -171,15 +174,6 @@ class Settings {
     // set: list of frames to take screenshots without duplication.
     set<int> screenshotFrames;
 };
-
-void updatePauseCapture(VkuLayerSettingSet layerSettingSet) {
-    const char* kSettingPauseCapture = "pause";
-    if (vkuHasLayerSetting(layerSettingSet, kSettingPauseCapture)) {
-        bool newPauseCapture = false;
-        vkuGetLayerSettingValue(layerSettingSet, kSettingPauseCapture, newPauseCapture);
-        std::atomic_store(&pauseCapture, newPauseCapture);
-    }
-}
 
 void Settings::init(VkuLayerSettingSet layerSettingSet) {
     const char* kSettingsKeyFrames = "frames";
@@ -238,8 +232,6 @@ void Settings::init(VkuLayerSettingSet layerSettingSet) {
         std::transform(value.begin(), value.end(), value.begin(), [](char c) { return std::toupper(c); });
         if (value == "PERFETTO") {
             writerType = WriterType::PERFETTO;
-        } else if (value == "BOTH") {
-            writerType = WriterType::BOTH;
         } else if (value == "FILE") {
             writerType = WriterType::FILE;
         }
@@ -441,7 +433,7 @@ static void init_screenshot(const VkInstanceCreateInfo* pCreateInfo, const VkAll
     // And LayerSettingSet with pFirstCreateInfo can be used only in the scope of CreateInstance.
     vkuCreateLayerSettingSet("VK_LAYER_LUNARG_screenshot", /* pFirstCreateInfo=*/nullptr, pAllocator, nullptr,
                              &globalLayerSettingSet);
-    updatePauseCapture(globalLayerSettingSet);
+    globalScreenshotWriter->updateLayerSettings(globalLayerSettingSet);
 
     startScreenshotThread();
 }
@@ -804,96 +796,107 @@ ScreenshotQueueData::~ScreenshotQueueData() {
     if (fence) pTableDevice->DestroyFence(device, fence, NULL);
 }
 
-class ScreenshotWriter {
-   public:
-    virtual ~ScreenshotWriter() = default;
-    virtual bool Write(const ScreenshotQueueData& data, const char* pixels, const VkSubresourceLayout& srLayout) = 0;
-    virtual void OnStop() {}
-};
+bool screenshot::FileScreenshotWriter::write(const char* pixels, int width, int height, int numChannels, int rowPitch,
+                                             int frameNumber) {
+    std::string fileName;
+    if (settings.targetFolder.empty()) {
+        fileName = std::to_string(frameNumber);
+    } else {
+        fileName = settings.targetFolder;
+        fileName += "/" + std::to_string(frameNumber);
+    }
 
-class FileScreenshotWriter : public ScreenshotWriter {
-   public:
-    bool Write(const ScreenshotQueueData& data, const char* pixels, const VkSubresourceLayout& srLayout) override {
-        std::string fileName;
-        if (settings.targetFolder.empty()) {
-            fileName = std::to_string(data.frameNumber);
-        } else {
-            fileName = settings.targetFolder;
-            fileName += "/" + std::to_string(data.frameNumber);
-        }
+    bool writeResult = false;
+    fileName += (settings.screenshotExtension == Settings::ScreenshotExtension::PAM) ? ".pam" : ".ppm";
 
-        bool writeResult = false;
-        fileName += (settings.screenshotExtension == Settings::ScreenshotExtension::PAM) ? ".pam" : ".ppm";
+    switch (settings.screenshotExtension) {
+        case Settings::ScreenshotExtension::PPM:
+            writeResult = writePPM(fileName.c_str(), pixels, width, height, numChannels, rowPitch);
+            break;
+        case Settings::ScreenshotExtension::PAM:
+            writeResult = writePAM(fileName.c_str(), pixels, width, height, numChannels, rowPitch);
+            break;
+    }
 
+    if (!writeResult) {
+#ifdef ANDROID
+        __android_log_print(ANDROID_LOG_ERROR, "screenshot", "Failed to write image: %s", fileName.c_str());
+#else
+        fprintf(stderr, "screenshot: Failed to write image: %s\n", fileName.c_str());
+#endif
+        return false;
+    }
+#ifdef ANDROID
+    __android_log_print(ANDROID_LOG_INFO, "screenshot", "Saved image: %s", fileName.c_str());
+#else
+    printf("screenshot: Saved image: %s \n", fileName.c_str());
+    fflush(stdout);
+#endif
+    return true;
+}
+
+void FileScreenshotWriter::updatePauseState(bool paused, bool queueEmpty) {
+    if (!paused && pauseFileRecorded) {
+        std::remove(settings.pauseFileName.c_str());
+        pauseFileRecorded = false;
+    }
+    if (paused && queueEmpty && !pauseFileRecorded) {
+        std::ofstream pauseFile(settings.pauseFileName.c_str());
+        pauseFileRecorded = true;
+    }
+}
+
+void FileScreenshotWriter::updateLayerSettings(VkuLayerSettingSet layerSettingSet) {
+    const char* kSettingPauseCapture = "pause";
+    if (vkuHasLayerSetting(layerSettingSet, kSettingPauseCapture)) {
+        bool newPauseCapture = false;
+        vkuGetLayerSettingValue(layerSettingSet, kSettingPauseCapture, newPauseCapture);
+        std::atomic_store(&pauseCapture, newPauseCapture);
+    }
+}
+
+bool screenshot::PerfettoScreenshotWriter::write(const char* pixels, int width, int height, int numChannels, int rowPitch,
+                                                 int frameNumber) {
+    ScreenshotDataSource::Trace([&](ScreenshotDataSource::TraceContext ctx) {
+        auto packet = ctx.NewTracePacket();
+        packet->set_timestamp(perfetto::base::GetBootTimeNs().count());
+        auto track_event = packet->set_track_event();
+        track_event->set_name("Screenshot");
+        track_event->set_type(::perfetto::protos::pbzero::TrackEvent::TYPE_INSTANT);
+
+        auto annotation = track_event->add_debug_annotations();
+        annotation->set_name("frame_number");
+        annotation->set_uint_value(frameNumber);
+
+        static std::stringstream ss;
+        ss.seekp(0);
+        ss.clear();
         switch (settings.screenshotExtension) {
             case Settings::ScreenshotExtension::PPM:
-                writeResult =
-                    writePPM(fileName.c_str(), pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
+                writePPM(ss, pixels, width, height, numChannels, rowPitch);
+                {
+                    std::string_view view = ss.view();
+                    track_event->set_screenshot()->set_ppm_image(reinterpret_cast<const uint8_t*>(view.data()), view.size());
+                }
                 break;
             case Settings::ScreenshotExtension::PAM:
-                writeResult =
-                    writePAM(fileName.c_str(), pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
+                writePAM(ss, pixels, width, height, numChannels, rowPitch);
+                {
+                    std::string_view view = ss.view();
+                    track_event->set_screenshot()->set_pam_image(reinterpret_cast<const uint8_t*>(view.data()), view.size());
+                }
                 break;
         }
-
-        if (!writeResult) {
+    });
 #ifdef ANDROID
-            __android_log_print(ANDROID_LOG_ERROR, "screenshot", "Failed to write image: %s", fileName.c_str());
-#else
-            fprintf(stderr, "screenshot: Failed to write image: %s\n", fileName.c_str());
+    __android_log_print(ANDROID_LOG_INFO, "screenshot", "Saved frame: %d", frameNumber);
 #endif
-            return false;
-        }
-#ifdef ANDROID
-        __android_log_print(ANDROID_LOG_INFO, "screenshot", "Saved image: %s", fileName.c_str());
-#else
-        printf("screenshot: Saved image: %s \n", fileName.c_str());
-        fflush(stdout);
-#endif
-        return true;
-    }
-};
+    return true;
+}
 
-class PerfettoScreenshotWriter : public ScreenshotWriter {
-   public:
-    bool Write(const ScreenshotQueueData& data, const char* pixels, const VkSubresourceLayout& srLayout) override {
-        ScreenshotDataSource::Trace([&](ScreenshotDataSource::TraceContext ctx) {
-            auto packet = ctx.NewTracePacket();
-            packet->set_timestamp(perfetto::base::GetBootTimeNs().count());
-            auto track_event = packet->set_track_event();
-            track_event->set_name("Screenshot");
-            track_event->set_type(::perfetto::protos::pbzero::TrackEvent::TYPE_INSTANT);
-
-            auto* annotation = track_event->add_debug_annotations();
-            annotation->set_name("frame_number");
-            annotation->set_uint_value(data.frameNumber);
-
-            static std::stringstream ss;
-            ss.seekp(0);
-            ss.clear();
-            switch (settings.screenshotExtension) {
-                case Settings::ScreenshotExtension::PPM:
-                    writePPM(ss, pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
-                    {
-                        size_t size = ss.tellp();
-                        track_event->set_screenshot()->set_ppm_image(reinterpret_cast<const uint8_t*>(ss.rdbuf()->str().data()),
-                                                                     size);
-                    }
-                    break;
-                case Settings::ScreenshotExtension::PAM:
-                    writePAM(ss, pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
-                    {
-                        size_t size = ss.tellp();
-                        track_event->set_screenshot()->set_pam_image(reinterpret_cast<const uint8_t*>(ss.rdbuf()->str().data()),
-                                                                     size);
-                    }
-                    break;
-            }
-        });
-        return true;
-    }
-};
-
+namespace screenshot {
+// Definition moved to screenshots_perfetto_helpers.cpp
+}  // namespace screenshot
 std::list<std::shared_ptr<ScreenshotQueueData>> screenshotsData;
 std::unordered_map<VkImage, std::list<std::shared_ptr<ScreenshotQueueData>>> screenshotDataCache;
 
@@ -1324,7 +1327,7 @@ static bool queueScreenshot(ScreenshotQueueData& data, VkImage image1, const VkP
 
 // Save an image to a PPM image file.
 // Returns true if file is successfully written, false otherwise.
-static bool writeScreenshot(ScreenshotQueueData& data) {
+static void writeScreenshot(ScreenshotQueueData& data) {
     PROFILE("screenshot.write");
     // Map the final image so that the CPU can read it.
     const VkImageSubresource sr = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0};
@@ -1333,32 +1336,22 @@ static bool writeScreenshot(ScreenshotQueueData& data) {
     if (data.image3 == VK_NULL_HANDLE) {
         data.pTableDevice->GetImageSubresourceLayout(data.device, data.image2, &sr, &srLayout);
         VkResult err = data.pTableDevice->MapMemory(data.device, data.mem2, 0, VK_WHOLE_SIZE, 0, (void**)&pixels);
-        if (VK_SUCCESS != err) return false;
+        if (VK_SUCCESS != err) return;
     } else {
         data.pTableDevice->GetImageSubresourceLayout(data.device, data.image3, &sr, &srLayout);
         VkResult err = data.pTableDevice->MapMemory(data.device, data.mem3, 0, VK_WHOLE_SIZE, 0, (void**)&pixels);
-        if (VK_SUCCESS != err) return false;
+        if (VK_SUCCESS != err) return;
     }
 
     pixels += srLayout.offset;
 
-    bool writeResult = true;
-    if (settings.writerType == Settings::WriterType::PERFETTO || settings.writerType == Settings::WriterType::BOTH) {
-        PerfettoScreenshotWriter perfettoWriter;
-        writeResult &= perfettoWriter.Write(data, pixels, srLayout);
-    }
-    if (settings.writerType == Settings::WriterType::FILE || settings.writerType == Settings::WriterType::BOTH) {
-        FileScreenshotWriter fileWriter;
-        writeResult &= fileWriter.Write(data, pixels, srLayout);
-    }
+    globalScreenshotWriter->write(pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch, data.frameNumber);
 
     if (data.image3 == VK_NULL_HANDLE) {
         data.pTableDevice->UnmapMemory(data.device, data.mem2);
     } else {
         data.pTableDevice->UnmapMemory(data.device, data.mem3);
     }
-
-    return writeResult;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL CreateInstance(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator,
@@ -1662,34 +1655,26 @@ VKAPI_ATTR VkResult VKAPI_CALL GetSwapchainImagesKHR(VkDevice device, VkSwapchai
 }
 
 void screenshotWriterThreadFunc() {
-    bool pauseFileRecorded = false;
-    if (!std::atomic_load(&pauseCapture)) {
-        std::remove(settings.pauseFileName.c_str());
-    }
+    globalScreenshotWriter->updatePauseState(std::atomic_load(&pauseCapture), true);
     while (true) {
         {
             std::lock_guard<std::mutex> lock(globalLock);
             if (globalLayerSettingSet != VK_NULL_HANDLE) {
-                updatePauseCapture(globalLayerSettingSet);
+                globalScreenshotWriter->updateLayerSettings(globalLayerSettingSet);
             }
         }
         bool paused = std::atomic_load(&pauseCapture);
-        if (!paused && pauseFileRecorded) {
-            std::remove(settings.pauseFileName.c_str());  // delete file
-            pauseFileRecorded = false;
-        }
 
         std::shared_ptr<ScreenshotQueueData> dataToSave;
         {
             PROFILE(paused ? "paused" : "Waiting for CPU")
             std::unique_lock<std::mutex> lock(globalLock);
+
+            globalScreenshotWriter->updatePauseState(paused, screenshotsData.empty());
+
             if (screenshotsData.empty()) {
-                if (paused && !pauseFileRecorded) {
-                    std::ofstream pauseFile(settings.pauseFileName.c_str());
-                    pauseFileRecorded = true;
-                }
                 // Make sure we don't wait on the CPU thread if we are shutting down, will deadlock.
-                if (shutdownScreenshotThread && screenshotsData.empty()) break;
+                if (shutdownScreenshotThread) break;
                 screenshotQueuedCV.wait(lock);
             }
             if (screenshotsData.empty()) continue;
