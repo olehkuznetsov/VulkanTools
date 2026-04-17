@@ -439,7 +439,7 @@ static void init_screenshot(const VkInstanceCreateInfo* pCreateInfo, const VkAll
     // And LayerSettingSet with pFirstCreateInfo can be used only in the scope of CreateInstance.
     vkuCreateLayerSettingSet("VK_LAYER_LUNARG_screenshot", /* pFirstCreateInfo=*/nullptr, pAllocator, nullptr,
                              &globalLayerSettingSet);
-    screenshotWriter->updateLayerSettings(globalLayerSettingSet);
+    screenshotWriter->controlPause();
 
     startScreenshotThread();
 }
@@ -856,11 +856,11 @@ bool FileScreenshotWriter::isPaused() const {
     return pauseFileRecorded;
 }
 
-void FileScreenshotWriter::updateLayerSettings(VkuLayerSettingSet layerSettingSet) {
+void FileScreenshotWriter::controlPause() {
     const char* kSettingPauseCapture = "pause";
-    if (vkuHasLayerSetting(layerSettingSet, kSettingPauseCapture)) {
+    if (vkuHasLayerSetting(globalLayerSettingSet, kSettingPauseCapture)) {
         bool newPauseCapture = false;
-        vkuGetLayerSettingValue(layerSettingSet, kSettingPauseCapture, newPauseCapture);
+        vkuGetLayerSettingValue(globalLayerSettingSet, kSettingPauseCapture, newPauseCapture);
         std::atomic_store(&pauseCapture, newPauseCapture);
     }
 }
@@ -1686,7 +1686,7 @@ void screenshotWriterThreadFunc() {
         {
             std::lock_guard<std::mutex> lock(globalLock);
             if (globalLayerSettingSet != VK_NULL_HANDLE) {
-                screenshotWriter->updateLayerSettings(globalLayerSettingSet);
+                screenshotWriter->controlPause();
             }
         }
         bool paused = std::atomic_load(&pauseCapture);

@@ -16,7 +16,7 @@ class ScreenshotWriter {
     virtual ~ScreenshotWriter() = default;
     virtual bool write(const char* pixels, int width, int height, int numChannels, int rowPitch, int frameNumber) = 0;
 
-    virtual void updateLayerSettings(VkuLayerSettingSet layerSettingSet) {}
+    virtual void controlPause() {}
     virtual bool isPerfetto() const { return false; }
     virtual void setInProgress() {}
     virtual void setInPause() {}
@@ -28,7 +28,7 @@ class FileScreenshotWriter : public ScreenshotWriter {
    public:
     bool write(const char* pixels, int width, int height, int numChannels, int rowPitch, int frameNumber) override;
 
-    void updateLayerSettings(VkuLayerSettingSet layerSettingSet) override;
+    void controlPause() override;
     void setInProgress() override;
     void setInPause() override;
     bool isPaused() const override;
