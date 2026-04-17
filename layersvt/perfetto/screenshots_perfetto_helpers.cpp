@@ -25,7 +25,7 @@ void ScreenshotDataSource::OnStart(const StartArgs&) {
 #ifdef ANDROID
     __android_log_print(ANDROID_LOG_INFO, "screenshot", "ScreenshotDataSource::OnStart called");
 #endif
-    if (!screenshot::globalScreenshotWriter || !screenshot::globalScreenshotWriter->isPerfetto()) {
+    if (!screenshot::screenshotWriter || !screenshot::screenshotWriter->isPerfetto()) {
         return;
     }
     std::atomic_store(&screenshot::pauseCapture, false);
@@ -35,7 +35,7 @@ void ScreenshotDataSource::OnStop(const StopArgs& args) {
 #ifdef ANDROID
     __android_log_print(ANDROID_LOG_INFO, "screenshot", "ScreenshotDataSource::OnStop called");
 #endif
-    if (!screenshot::globalScreenshotWriter || !screenshot::globalScreenshotWriter->isPerfetto()) {
+    if (!screenshot::screenshotWriter || !screenshot::screenshotWriter->isPerfetto()) {
         return;
     }
 

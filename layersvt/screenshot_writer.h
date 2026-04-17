@@ -47,7 +47,7 @@ class PerfettoScreenshotWriter : public ScreenshotWriter {
     bool pauseFileRecorded = false;
 };
 
-extern std::unique_ptr<ScreenshotWriter> globalScreenshotWriter;
+extern std::unique_ptr<ScreenshotWriter> screenshotWriter;
 
 }  // namespace screenshot
 

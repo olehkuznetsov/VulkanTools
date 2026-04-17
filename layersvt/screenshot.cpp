@@ -78,7 +78,7 @@ VkuLayerSettingSet globalLayerSettingSet = VK_NULL_HANDLE;
 // If true, do not capture screenshots. Allows to control the layer at runtime.
 std::atomic_bool pauseCapture(false);
 
-std::unique_ptr<ScreenshotWriter> globalScreenshotWriter;
+std::unique_ptr<ScreenshotWriter> screenshotWriter;
 
 enum class ColorSpaceFormat { UNDEFINED, UNORM, SNORM, USCALED, SSCALED, UINT, SINT, SRGB };
 
@@ -431,9 +431,9 @@ static void init_screenshot(const VkInstanceCreateInfo* pCreateInfo, const VkAll
     std::call_once(perfetto_init_flag, []() { InitializeScreenshotsPerfetto(); });
 
     if (settings.writerType == Settings::WriterType::PERFETTO) {
-        globalScreenshotWriter = std::make_unique<PerfettoScreenshotWriter>();
+        screenshotWriter = std::make_unique<PerfettoScreenshotWriter>();
     } else {
-        globalScreenshotWriter = std::make_unique<FileScreenshotWriter>();
+        screenshotWriter = std::make_unique<FileScreenshotWriter>();
     }
 
     // Init global layer setting set with pFirstCreateInfo as nullptr.
@@ -441,7 +441,7 @@ static void init_screenshot(const VkInstanceCreateInfo* pCreateInfo, const VkAll
     // And LayerSettingSet with pFirstCreateInfo can be used only in the scope of CreateInstance.
     vkuCreateLayerSettingSet("VK_LAYER_LUNARG_screenshot", /* pFirstCreateInfo=*/nullptr, pAllocator, nullptr,
                              &globalLayerSettingSet);
-    globalScreenshotWriter->updateLayerSettings(globalLayerSettingSet);
+    screenshotWriter->updateLayerSettings(globalLayerSettingSet);
 
     startScreenshotThread();
 }
@@ -1379,7 +1379,7 @@ static void writeScreenshot(ScreenshotQueueData& data) {
 
     pixels += srLayout.offset;
 
-    globalScreenshotWriter->write(pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch, data.frameNumber);
+    screenshotWriter->write(pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch, data.frameNumber);
 
     if (data.image3 == VK_NULL_HANDLE) {
         data.pTableDevice->UnmapMemory(data.device, data.mem2);
@@ -1690,13 +1690,13 @@ VKAPI_ATTR VkResult VKAPI_CALL GetSwapchainImagesKHR(VkDevice device, VkSwapchai
 
 void screenshotWriterThreadFunc() {
     if (!std::atomic_load(&pauseCapture)) {
-        globalScreenshotWriter->setInProgress();
+        screenshotWriter->setInProgress();
     }
     while (true) {
         {
             std::lock_guard<std::mutex> lock(globalLock);
             if (globalLayerSettingSet != VK_NULL_HANDLE) {
-                globalScreenshotWriter->updateLayerSettings(globalLayerSettingSet);
+                screenshotWriter->updateLayerSettings(globalLayerSettingSet);
             }
         }
         bool paused = std::atomic_load(&pauseCapture);
@@ -1707,8 +1707,8 @@ void screenshotWriterThreadFunc() {
             std::unique_lock<std::mutex> lock(globalLock);
 
             if (screenshotsData.empty()) {
-                if (paused && !globalScreenshotWriter->isPaused()) {
-                    globalScreenshotWriter->setInPause();
+                if (paused && !screenshotWriter->isPaused()) {
+                    screenshotWriter->setInPause();
                 }
                 // Make sure we don't wait on the CPU thread if we are shutting down, will deadlock.
                 if (shutdownScreenshotThread) break;
