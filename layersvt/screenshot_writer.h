@@ -1,13 +1,7 @@
 #ifndef LAYERSVT_SCREENSHOT_WRITER_H
 #define LAYERSVT_SCREENSHOT_WRITER_H
 
-#include <vulkan/vulkan.h>
-#include <vulkan/layer/vk_layer_settings.hpp>
 #include <memory>
-
-namespace screenshot {
-class ScreenshotQueueData;
-}
 
 namespace screenshot {
 
@@ -31,7 +25,7 @@ class FileScreenshotWriter : public ScreenshotWriter {
     void setInProgress() override;
     void setInPause() override;
     bool isPaused() const override;
-    bool canControlPause() const override { return true; }
+    bool canControlPause() const override;
 
    private:
     bool pauseFileRecorded = false;
@@ -44,11 +38,10 @@ class PerfettoScreenshotWriter : public ScreenshotWriter {
     void setInProgress() override;
     void setInPause() override;
     bool isPaused() const override;
+
    private:
     bool pauseFileRecorded = false;
 };
-
-
 
 }  // namespace screenshot
 

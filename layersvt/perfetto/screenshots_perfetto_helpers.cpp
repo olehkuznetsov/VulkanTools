@@ -1,13 +1,13 @@
 #include "screenshots_perfetto_helpers.h"
 #include "screenshot_writer.h"
 
-
-
 PERFETTO_DEFINE_CATEGORIES(perfetto::Category("VulkanScreenshots").SetDescription("Vulkan Layer Screenshots"));
 
 PERFETTO_TRACK_EVENT_STATIC_STORAGE();
 
 void InitializeScreenshotsPerfetto() {
+    std::atomic_store(&screenshot::pauseCapture, true);
+
     perfetto::TracingInitArgs args;
     // The backends determine where trace events are recorded.
     // kSystemBackend connects to the system traced service (e.g. on Android).
@@ -19,7 +19,6 @@ void InitializeScreenshotsPerfetto() {
     perfetto::DataSourceDescriptor dsd;
     dsd.set_name("VulkanScreenshots");
     ScreenshotDataSource::Register(dsd);
-    std::atomic_store(&screenshot::pauseCapture, true);
 }
 
 void ScreenshotDataSource::OnStart(const StartArgs&) {
