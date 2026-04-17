@@ -802,8 +802,8 @@ ScreenshotQueueData::~ScreenshotQueueData() {
     if (fence) pTableDevice->DestroyFence(device, fence, NULL);
 }
 
-bool screenshot::FileScreenshotWriter::write(const char* pixels, int width, int height, int numChannels, int rowPitch,
-                                             int frameNumber) {
+bool FileScreenshotWriter::write(const char* pixels, int width, int height, int numChannels, int rowPitch,
+                                 int frameNumber) {
     std::string fileName;
     if (settings.targetFolder.empty()) {
         fileName = std::to_string(frameNumber);
@@ -865,12 +865,12 @@ void FileScreenshotWriter::updateLayerSettings(VkuLayerSettingSet layerSettingSe
     }
 }
 
-screenshot::PerfettoScreenshotWriter::PerfettoScreenshotWriter() {
+PerfettoScreenshotWriter::PerfettoScreenshotWriter() {
     static std::once_flag perfetto_init_flag;
     std::call_once(perfetto_init_flag, []() { InitializeScreenshotsPerfetto(); });
 }
 
-bool screenshot::PerfettoScreenshotWriter::write(const char* pixels, int width, int height, int numChannels, int rowPitch,
+bool PerfettoScreenshotWriter::write(const char* pixels, int width, int height, int numChannels, int rowPitch,
                                                  int frameNumber) {
     ScreenshotDataSource::Trace([&](ScreenshotDataSource::TraceContext ctx) {
         auto packet = ctx.NewTracePacket();
@@ -1690,15 +1690,14 @@ void screenshotWriterThreadFunc() {
             }
         }
         bool paused = std::atomic_load(&pauseCapture);
+        if (!paused && screenshotWriter->isPaused()) {
+            screenshotWriter->setInProgress();
+        }
 
         std::shared_ptr<ScreenshotQueueData> dataToSave;
         {
             PROFILE(paused ? "paused" : "Waiting for CPU")
             std::unique_lock<std::mutex> lock(globalLock);
-
-            if (!paused && screenshotWriter->isPaused()) {
-                screenshotWriter->setInProgress();
-            }
 
             if (screenshotsData.empty()) {
                 if (paused && !screenshotWriter->isPaused()) {
