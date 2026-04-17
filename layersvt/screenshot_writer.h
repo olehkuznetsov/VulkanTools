@@ -17,6 +17,10 @@ class ScreenshotWriter {
     virtual bool write(const char* pixels, int width, int height, int numChannels, int rowPitch, int frameNumber) = 0;
     virtual void updatePauseState(bool paused, bool queueEmpty) {}
     virtual void updateLayerSettings(VkuLayerSettingSet layerSettingSet) {}
+    virtual bool isPerfetto() const { return false; }
+    virtual void setInProgress() {}
+    virtual void setInPause() {}
+    virtual bool isPaused() const { return false; }
 };
 
 class FileScreenshotWriter : public ScreenshotWriter {
@@ -24,6 +28,9 @@ class FileScreenshotWriter : public ScreenshotWriter {
     bool write(const char* pixels, int width, int height, int numChannels, int rowPitch, int frameNumber) override;
     void updatePauseState(bool paused, bool queueEmpty) override;
     void updateLayerSettings(VkuLayerSettingSet layerSettingSet) override;
+    void setInProgress() override;
+    void setInPause() override;
+    bool isPaused() const override;
 
    private:
     bool pauseFileRecorded = false;
@@ -32,6 +39,12 @@ class FileScreenshotWriter : public ScreenshotWriter {
 class PerfettoScreenshotWriter : public ScreenshotWriter {
    public:
     bool write(const char* pixels, int width, int height, int numChannels, int rowPitch, int frameNumber) override;
+    bool isPerfetto() const override { return true; }
+    void setInProgress() override;
+    void setInPause() override;
+    bool isPaused() const override;
+   private:
+    bool pauseFileRecorded = false;
 };
 
 extern std::unique_ptr<ScreenshotWriter> globalScreenshotWriter;

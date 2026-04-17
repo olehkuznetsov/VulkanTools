@@ -78,6 +78,8 @@ VkuLayerSettingSet globalLayerSettingSet = VK_NULL_HANDLE;
 // If true, do not capture screenshots. Allows to control the layer at runtime.
 std::atomic_bool pauseCapture(false);
 
+std::unique_ptr<ScreenshotWriter> globalScreenshotWriter;
+
 enum class ColorSpaceFormat { UNDEFINED, UNORM, SNORM, USCALED, SSCALED, UINT, SINT, SRGB };
 
 // unordered map: associates Vulkan dispatchable objects to a dispatch table
@@ -427,6 +429,12 @@ static void init_screenshot(const VkInstanceCreateInfo* pCreateInfo, const VkAll
 
     settings.init(layerSettingSet);
     std::call_once(perfetto_init_flag, []() { InitializeScreenshotsPerfetto(); });
+
+    if (settings.writerType == Settings::WriterType::PERFETTO) {
+        globalScreenshotWriter = std::make_unique<PerfettoScreenshotWriter>();
+    } else {
+        globalScreenshotWriter = std::make_unique<FileScreenshotWriter>();
+    }
 
     // Init global layer setting set with pFirstCreateInfo as nullptr.
     // We are checking for settings changes at runtime and pFirstCreateInfo is const.
@@ -846,6 +854,20 @@ void FileScreenshotWriter::updatePauseState(bool paused, bool queueEmpty) {
     }
 }
 
+void FileScreenshotWriter::setInProgress() {
+    std::remove(settings.pauseFileName.c_str());
+    pauseFileRecorded = false;
+}
+
+void FileScreenshotWriter::setInPause() {
+    std::ofstream pauseFile(settings.pauseFileName.c_str());
+    pauseFileRecorded = true;
+}
+
+bool FileScreenshotWriter::isPaused() const {
+    return pauseFileRecorded;
+}
+
 void FileScreenshotWriter::updateLayerSettings(VkuLayerSettingSet layerSettingSet) {
     const char* kSettingPauseCapture = "pause";
     if (vkuHasLayerSetting(layerSettingSet, kSettingPauseCapture)) {
@@ -892,6 +914,18 @@ bool screenshot::PerfettoScreenshotWriter::write(const char* pixels, int width, 
     __android_log_print(ANDROID_LOG_INFO, "screenshot", "Saved frame: %d", frameNumber);
 #endif
     return true;
+}
+
+void PerfettoScreenshotWriter::setInProgress() {
+    pauseFileRecorded = false;
+}
+
+void PerfettoScreenshotWriter::setInPause() {
+    pauseFileRecorded = true;
+}
+
+bool PerfettoScreenshotWriter::isPaused() const {
+    return pauseFileRecorded;
 }
 
 namespace screenshot {
@@ -1655,7 +1689,9 @@ VKAPI_ATTR VkResult VKAPI_CALL GetSwapchainImagesKHR(VkDevice device, VkSwapchai
 }
 
 void screenshotWriterThreadFunc() {
-    globalScreenshotWriter->updatePauseState(std::atomic_load(&pauseCapture), true);
+    if (!std::atomic_load(&pauseCapture)) {
+        globalScreenshotWriter->setInProgress();
+    }
     while (true) {
         {
             std::lock_guard<std::mutex> lock(globalLock);
@@ -1670,9 +1706,10 @@ void screenshotWriterThreadFunc() {
             PROFILE(paused ? "paused" : "Waiting for CPU")
             std::unique_lock<std::mutex> lock(globalLock);
 
-            globalScreenshotWriter->updatePauseState(paused, screenshotsData.empty());
-
             if (screenshotsData.empty()) {
+                if (paused && !globalScreenshotWriter->isPaused()) {
+                    globalScreenshotWriter->setInPause();
+                }
                 // Make sure we don't wait on the CPU thread if we are shutting down, will deadlock.
                 if (shutdownScreenshotThread) break;
                 screenshotQueuedCV.wait(lock);

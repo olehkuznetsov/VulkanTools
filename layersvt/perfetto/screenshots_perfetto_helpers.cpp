@@ -1,9 +1,7 @@
 #include "screenshots_perfetto_helpers.h"
 #include "screenshot_writer.h"
 
-namespace screenshot {
-std::unique_ptr<ScreenshotWriter> globalScreenshotWriter = std::make_unique<FileScreenshotWriter>();
-}
+
 
 PERFETTO_DEFINE_CATEGORIES(perfetto::Category("VulkanScreenshots").SetDescription("Vulkan Layer Screenshots"));
 
@@ -27,14 +25,19 @@ void ScreenshotDataSource::OnStart(const StartArgs&) {
 #ifdef ANDROID
     __android_log_print(ANDROID_LOG_INFO, "screenshot", "ScreenshotDataSource::OnStart called");
 #endif
+    if (!screenshot::globalScreenshotWriter || !screenshot::globalScreenshotWriter->isPerfetto()) {
+        return;
+    }
     std::atomic_store(&screenshot::pauseCapture, false);
-    screenshot::globalScreenshotWriter = std::make_unique<screenshot::PerfettoScreenshotWriter>();
 }
 
 void ScreenshotDataSource::OnStop(const StopArgs& args) {
 #ifdef ANDROID
     __android_log_print(ANDROID_LOG_INFO, "screenshot", "ScreenshotDataSource::OnStop called");
 #endif
+    if (!screenshot::globalScreenshotWriter || !screenshot::globalScreenshotWriter->isPerfetto()) {
+        return;
+    }
 
     std::atomic_store(&screenshot::pauseCapture, true);
     auto async_stop_closure = args.HandleStopAsynchronously();
