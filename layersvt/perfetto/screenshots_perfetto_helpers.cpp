@@ -19,15 +19,13 @@ void InitializeScreenshotsPerfetto() {
     perfetto::DataSourceDescriptor dsd;
     dsd.set_name("VulkanScreenshots");
     ScreenshotDataSource::Register(dsd);
+    std::atomic_store(&screenshot::pauseCapture, true);
 }
 
 void ScreenshotDataSource::OnStart(const StartArgs&) {
 #ifdef ANDROID
     __android_log_print(ANDROID_LOG_INFO, "screenshot", "ScreenshotDataSource::OnStart called");
 #endif
-    if (!screenshot::screenshotWriter || !screenshot::screenshotWriter->isPerfetto()) {
-        return;
-    }
     std::atomic_store(&screenshot::pauseCapture, false);
 }
 
@@ -35,9 +33,6 @@ void ScreenshotDataSource::OnStop(const StopArgs& args) {
 #ifdef ANDROID
     __android_log_print(ANDROID_LOG_INFO, "screenshot", "ScreenshotDataSource::OnStop called");
 #endif
-    if (!screenshot::screenshotWriter || !screenshot::screenshotWriter->isPerfetto()) {
-        return;
-    }
 
     std::atomic_store(&screenshot::pauseCapture, true);
     auto async_stop_closure = args.HandleStopAsynchronously();

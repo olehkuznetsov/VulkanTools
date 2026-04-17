@@ -17,7 +17,6 @@ class ScreenshotWriter {
     virtual bool write(const char* pixels, int width, int height, int numChannels, int rowPitch, int frameNumber) = 0;
 
     virtual void controlPause() {}
-    virtual bool isPerfetto() const { return false; }
     virtual void setInProgress() {}
     virtual void setInPause() {}
     virtual bool isPaused() const { return false; }
@@ -42,7 +41,6 @@ class PerfettoScreenshotWriter : public ScreenshotWriter {
    public:
     PerfettoScreenshotWriter();
     bool write(const char* pixels, int width, int height, int numChannels, int rowPitch, int frameNumber) override;
-    bool isPerfetto() const override { return true; }
     void setInProgress() override;
     void setInPause() override;
     bool isPaused() const override;
@@ -50,7 +48,7 @@ class PerfettoScreenshotWriter : public ScreenshotWriter {
     bool pauseFileRecorded = false;
 };
 
-extern std::unique_ptr<ScreenshotWriter> screenshotWriter;
+
 
 }  // namespace screenshot
 
