@@ -52,3 +52,72 @@ adb shell pm grant com.example.VkCube android.permission.WRITE_EXTERNAL_STORAGE
 ## Layer Settings
 
 The options for this layer are specified in VK_LAYER_LUNARG_screenshot.json. The layer option details are documented in the [screenshot layer documentation](https://vulkan.lunarg.com/doc/sdk/latest/windows/screenshot_layer.html#user-content-layer-details).
+
+## Emitting Screenshots to Perfetto on Android
+
+This layer has been modified to emit screenshots directly into Perfetto traces.
+
+### Building for Android
+To build the layer for Android (ARM64), use the provided script:
+```bash
+export ANDROID_NDK_HOME=/path/to/your/ndk
+python3 scripts/android.py --config Release --app-abi arm64-v8a
+```
+The library will be located at: `build-android/libs/lib/arm64-v8a/libVkLayer_screenshot.so`.
+
+### Manual Verification Steps
+
+#### 1. Install the Layer on Device
+Push the `.so` and `.json` files to the device. For a debuggable app, it's best to copy them to the app's directory to avoid permission issues:
+
+```bash
+adb push build-android/libs/lib/arm64-v8a/libVkLayer_screenshot.so /data/local/tmp/
+adb push build/layersvt/VkLayer_screenshot.json /data/local/tmp/
+
+adb shell "run-as <your.package.name> cp /data/local/tmp/libVkLayer_screenshot.so ."
+adb shell "run-as <your.package.name> cp /data/local/tmp/VkLayer_screenshot.json ."
+```
+
+#### 2. Enable the Layer
+```bash
+adb shell settings put global enable_gpu_debug_layers 1
+adb shell settings put global gpu_debug_layers VK_LAYER_LUNARG_screenshot
+adb shell settings put global gpu_debug_app <your.package.name>
+adb shell settings put global gpu_debug_layer_app /data/data/<your.package.name>
+```
+
+#### 3. Configure Settings
+Create a `vk_layer_settings.txt` file and push it to the app's directory:
+```text
+lunarg_screenshot.frames = 10-5
+```
+```bash
+adb push vk_layer_settings.txt /data/local/tmp/
+adb shell "run-as <your.package.name> cp /data/local/tmp/vk_layer_settings.txt ."
+```
+
+#### 4. Record the Trace
+Create a Perfetto config textproto with the category `VulkanScreenshots` enabled:
+```textproto
+buffers {
+  size_kb: 63488
+}
+data_sources {
+  config {
+    name: "track_event"
+    track_event_config {
+      enabled_categories: "VulkanScreenshots"
+    }
+  }
+}
+```
+Run the trace:
+```bash
+adb shell perfetto -c - --txt -o /data/misc/perfetto-traces/trace.perfetto < config.textproto
+```
+
+#### 5. Pull and View
+```bash
+adb pull /data/misc/perfetto-traces/trace.perfetto
+```
+Open in [ui.perfetto.dev](https://ui.perfetto.dev).
