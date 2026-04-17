@@ -236,7 +236,7 @@ https://en.wikipedia.org/wiki/Apk_(file_format)#Package_contents
 
 Alternatively users can also use `scripts/android.py` to build the binaries.
 
-Note: `scripts/android.py` will place the binaries in the `build-android/libs` directory.
+Note: `scripts/android.py` will place the binaries in the `build-android/install` directory.
 
 ```sh
 # Build release binary for arm64-v8a

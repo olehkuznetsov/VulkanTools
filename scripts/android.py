@@ -84,7 +84,7 @@ def main():
 
         print(f"Using {tool} : {path}")
 
-    cmake_install_dir = RepoRelative('build-android/libs')
+    cmake_install_dir = RepoRelative('build-android/install')
 
     # Delete install directory since it could contain files from old runs
     if os.path.isdir(cmake_install_dir):
@@ -93,7 +93,8 @@ def main():
 
     for abi in android_abis:
         build_dir = RepoRelative(f'build-android/cmake/{abi}')
-        lib_dir = f'lib/{abi}'
+        lib_dir = f'{abi}/lib'
+        bin_dir = f'{abi}/bin'
 
         if clean:
             print("Deleting CMakeCache.txt")
@@ -111,6 +112,7 @@ def main():
         cmake_cmd += f' -D CMAKE_TOOLCHAIN_FILE={android_toolchain}'
         cmake_cmd += f' -D CMAKE_ANDROID_ARCH_ABI={abi}'
         cmake_cmd += f' -D CMAKE_INSTALL_LIBDIR={lib_dir}'
+        cmake_cmd += f' -D CMAKE_INSTALL_BINDIR={bin_dir}'
         cmake_cmd += f' -D BUILD_TESTS={build_tests}'
         cmake_cmd += f' -D CMAKE_ANDROID_STL_TYPE=c++_static'
 

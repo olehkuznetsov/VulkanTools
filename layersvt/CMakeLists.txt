@@ -156,11 +156,43 @@ if(BUILD_CPUTIMING)
     endif()
 endif()
 
+if(BUILD_DEBUGMARKER)
+    add_library(VkLayer_DebugMarker MODULE)
+    set_target_properties(VkLayer_DebugMarker PROPERTIES FOLDER "layers/debugmarker")
+    target_sources(VkLayer_DebugMarker PRIVATE
+        debug_marker_handwritten_dispatch.cpp
+        debug_marker_handwritten_functions.h
+        debug_marker_handwritten_functions_vk_ext_debug_marker.h
+        debug_marker_handwritten_functions_vk_ext_debug_utils.h
+        debug_marker.h
+        debug_marker.cpp
+        debug_marker_perfetto.h
+        debug_marker_perfetto.cpp
+        perfetto/perfetto.cc
+        vk_layer_table.cpp
+        vk_layer_table.h
+        layer_keep_alive.cpp
+        json/VkLayer_DebugMarker.json.in
+    )
+
+    if(CMAKE_SYSTEM_NAME MATCHES "Linux|BSD|DragonFly|GNU")
+        if (BUILD_WSI_XCB_SUPPORT)
+            target_compile_definitions(VkLayer_DebugMarker PRIVATE VK_USE_PLATFORM_XLIB_KHR)
+        endif()
+
+        if (BUILD_WSI_WAYLAND_SUPPORT)
+            target_compile_definitions(VkLayer_DebugMarker PRIVATE VK_USE_PLATFORM_WAYLAND_KHR)
+        endif()
+    endif()
+
+    target_compile_definitions(VkLayer_DebugMarker PRIVATE VK_ENABLE_BETA_EXTENSIONS)
+endif()
+
 if (BUILD_TESTS AND NOT RUN_ON_GITHUB)
     add_subdirectory(test)
 endif()
 
-list(APPEND TOOL_LAYERS "VkLayer_api_dump" "VkLayer_screenshot" "VkLayer_monitor" "VkLayer_CPUTiming")
+list(APPEND TOOL_LAYERS "VkLayer_api_dump" "VkLayer_screenshot" "VkLayer_monitor" "VkLayer_CPUTiming" "VkLayer_DebugMarker")
 foreach(layer ${TOOL_LAYERS})
     if (NOT TARGET "${layer}")
         continue()
