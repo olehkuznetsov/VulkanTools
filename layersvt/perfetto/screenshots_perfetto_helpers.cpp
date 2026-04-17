@@ -1,5 +1,4 @@
 #include "screenshots_perfetto_helpers.h"
-#include "screenshot_writer.h"
 #include <atomic>
 #include <thread>
 #include <mutex>
@@ -9,6 +8,8 @@
 #ifdef ANDROID
 #include <android/log.h>
 #endif
+
+#include "screenshot_writer.h"
 
 namespace screenshot {
 struct ScreenshotQueueData;

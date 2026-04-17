@@ -39,27 +39,26 @@
 #include <ostream>
 #include <thread>
 #include <condition_variable>
+#include <vulkan/layer/vk_layer_settings.hpp>
+#include <vulkan/vk_enum_string_helper.h>
+#include <string_view>
 
 #if defined(_WIN32) && !defined(NDEBUG)
 #include <crtdbg.h>
 #endif
-
-using namespace std;
-
-#include <vulkan/layer/vk_layer_settings.hpp>
-#include <vulkan/vk_enum_string_helper.h>
-#include "vk_layer_table.h"
-
-#include "screenshot_parsing.h"
-#include "perfetto/screenshots_perfetto_helpers.h"
-#include "screenshot_writer.h"
-#include <string_view>
 
 #ifdef ANDROID
 #include <android/trace.h>
 #include <android/log.h>
 #include <sys/system_properties.h>
 #endif
+
+#include "vk_layer_table.h"
+#include "screenshot_parsing.h"
+#include "perfetto/screenshots_perfetto_helpers.h"
+#include "screenshot_writer.h"
+
+using namespace std;
 
 namespace screenshot {
 
@@ -902,7 +901,6 @@ bool PerfettoScreenshotWriter::write(const char* pixels, int width, int height, 
 #endif
     return true;
 }
-
 
 std::list<std::shared_ptr<ScreenshotQueueData>> screenshotsData;
 std::unordered_map<VkImage, std::list<std::shared_ptr<ScreenshotQueueData>>> screenshotDataCache;
