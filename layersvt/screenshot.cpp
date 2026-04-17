@@ -133,6 +133,9 @@ class Settings {
     enum class ScreenshotExtension { PPM, PAM };
     ScreenshotExtension screenshotExtension = ScreenshotExtension::PPM;
 
+    enum class WriterType { FILE, PERFETTO, BOTH };
+    WriterType writerType = WriterType::BOTH;
+
     // Result screenshot scale. ScreenshotSize = scalePercent * FrameBufferSize / 100;
     int scalePercent = 100;
 
@@ -225,6 +228,20 @@ void Settings::init(VkuLayerSettingSet layerSettingSet) {
                     "\nPPM will be used instead",
                     value.c_str());
 #endif
+        }
+    }
+
+    const char* kSettingWriter = "writer";
+    if (vkuHasLayerSetting(layerSettingSet, kSettingWriter)) {
+        std::string value;
+        vkuGetLayerSettingValue(layerSettingSet, kSettingWriter, value);
+        std::transform(value.begin(), value.end(), value.begin(), [](char c) { return std::toupper(c); });
+        if (value == "PERFETTO") {
+            writerType = WriterType::PERFETTO;
+        } else if (value == "BOTH") {
+            writerType = WriterType::BOTH;
+        } else if (value == "FILE") {
+            writerType = WriterType::FILE;
         }
     }
 
@@ -787,6 +804,96 @@ ScreenshotQueueData::~ScreenshotQueueData() {
     if (fence) pTableDevice->DestroyFence(device, fence, NULL);
 }
 
+class ScreenshotWriter {
+   public:
+    virtual ~ScreenshotWriter() = default;
+    virtual bool Write(const ScreenshotQueueData& data, const char* pixels, const VkSubresourceLayout& srLayout) = 0;
+    virtual void OnStop() {}
+};
+
+class FileScreenshotWriter : public ScreenshotWriter {
+   public:
+    bool Write(const ScreenshotQueueData& data, const char* pixels, const VkSubresourceLayout& srLayout) override {
+        std::string fileName;
+        if (settings.targetFolder.empty()) {
+            fileName = std::to_string(data.frameNumber);
+        } else {
+            fileName = settings.targetFolder;
+            fileName += "/" + std::to_string(data.frameNumber);
+        }
+
+        bool writeResult = false;
+        fileName += (settings.screenshotExtension == Settings::ScreenshotExtension::PAM) ? ".pam" : ".ppm";
+
+        switch (settings.screenshotExtension) {
+            case Settings::ScreenshotExtension::PPM:
+                writeResult =
+                    writePPM(fileName.c_str(), pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
+                break;
+            case Settings::ScreenshotExtension::PAM:
+                writeResult =
+                    writePAM(fileName.c_str(), pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
+                break;
+        }
+
+        if (!writeResult) {
+#ifdef ANDROID
+            __android_log_print(ANDROID_LOG_ERROR, "screenshot", "Failed to write image: %s", fileName.c_str());
+#else
+            fprintf(stderr, "screenshot: Failed to write image: %s\n", fileName.c_str());
+#endif
+            return false;
+        }
+#ifdef ANDROID
+        __android_log_print(ANDROID_LOG_INFO, "screenshot", "Saved image: %s", fileName.c_str());
+#else
+        printf("screenshot: Saved image: %s \n", fileName.c_str());
+        fflush(stdout);
+#endif
+        return true;
+    }
+};
+
+class PerfettoScreenshotWriter : public ScreenshotWriter {
+   public:
+    bool Write(const ScreenshotQueueData& data, const char* pixels, const VkSubresourceLayout& srLayout) override {
+        ScreenshotDataSource::Trace([&](ScreenshotDataSource::TraceContext ctx) {
+            auto packet = ctx.NewTracePacket();
+            packet->set_timestamp(perfetto::base::GetBootTimeNs().count());
+            auto track_event = packet->set_track_event();
+            track_event->set_name("Screenshot");
+            track_event->set_type(::perfetto::protos::pbzero::TrackEvent::TYPE_INSTANT);
+
+            auto* annotation = track_event->add_debug_annotations();
+            annotation->set_name("frame_number");
+            annotation->set_uint_value(data.frameNumber);
+
+            static std::stringstream ss;
+            ss.seekp(0);
+            ss.clear();
+            switch (settings.screenshotExtension) {
+                case Settings::ScreenshotExtension::PPM:
+                    writePPM(ss, pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
+                    {
+                        size_t size = ss.tellp();
+                        track_event->set_screenshot()->set_ppm_image(reinterpret_cast<const uint8_t*>(ss.rdbuf()->str().data()),
+                                                                     size);
+                    }
+                    break;
+                case Settings::ScreenshotExtension::PAM:
+                    writePAM(ss, pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
+                    {
+                        size_t size = ss.tellp();
+                        track_event->set_screenshot()->set_pam_image(reinterpret_cast<const uint8_t*>(ss.rdbuf()->str().data()),
+                                                                     size);
+                    }
+                    break;
+            }
+        });
+        return true;
+    }
+};
+
 std::list<std::shared_ptr<ScreenshotQueueData>> screenshotsData;
 std::unordered_map<VkImage, std::list<std::shared_ptr<ScreenshotQueueData>>> screenshotDataCache;
 
@@ -1235,58 +1342,14 @@ static bool writeScreenshot(ScreenshotQueueData& data) {
 
     pixels += srLayout.offset;
 
-    ScreenshotDataSource::Trace([&](ScreenshotDataSource::TraceContext ctx) {
-        {
-            auto packet = ctx.NewTracePacket();
-            packet->set_timestamp(perfetto::base::GetBootTimeNs().count());
-            auto track_event = packet->set_track_event();
-            track_event->set_name("Screenshot");
-            track_event->set_type(::perfetto::protos::pbzero::TrackEvent::TYPE_INSTANT);
-
-            auto* annotation = track_event->add_debug_annotations();
-            annotation->set_name("frame_number");
-            annotation->set_uint_value(data.frameNumber);
-
-            static std::stringstream ss;
-            ss.str("");
-            ss.clear();
-            switch (settings.screenshotExtension) {
-                case Settings::ScreenshotExtension::PPM:
-                    writePPM(ss, pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
-                    {
-                        std::string s = ss.str();
-                        track_event->set_screenshot()->set_ppm_image(reinterpret_cast<const uint8_t*>(s.data()), s.size());
-                    }
-                    break;
-                case Settings::ScreenshotExtension::PAM:
-                    writePAM(ss, pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
-                    {
-                        std::string s = ss.str();
-                        track_event->set_screenshot()->set_pam_image(reinterpret_cast<const uint8_t*>(s.data()), s.size());
-                    }
-                    break;
-            }
-        }
-    });
-
-    string fileName;
-    if (settings.targetFolder.empty()) {
-        fileName = to_string(data.frameNumber);
-    } else {
-        fileName = settings.targetFolder;
-        fileName += "/" + to_string(data.frameNumber);
+    bool writeResult = true;
+    if (settings.writerType == Settings::WriterType::PERFETTO || settings.writerType == Settings::WriterType::BOTH) {
+        PerfettoScreenshotWriter perfettoWriter;
+        writeResult &= perfettoWriter.Write(data, pixels, srLayout);
     }
-
-    bool writeResult = false;
-    fileName += (settings.screenshotExtension == Settings::ScreenshotExtension::PAM) ? ".pam" : ".ppm";
-
-    switch (settings.screenshotExtension) {
-        case Settings::ScreenshotExtension::PPM:
-            writeResult = writePPM(fileName.c_str(), pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
-            break;
-        case Settings::ScreenshotExtension::PAM:
-            writeResult = writePAM(fileName.c_str(), pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch);
-            break;
+    if (settings.writerType == Settings::WriterType::FILE || settings.writerType == Settings::WriterType::BOTH) {
+        FileScreenshotWriter fileWriter;
+        writeResult &= fileWriter.Write(data, pixels, srLayout);
     }
 
     if (data.image3 == VK_NULL_HANDLE) {
@@ -1295,21 +1358,7 @@ static bool writeScreenshot(ScreenshotQueueData& data) {
         data.pTableDevice->UnmapMemory(data.device, data.mem3);
     }
 
-    if (!writeResult) {
-#ifdef ANDROID
-        __android_log_print(ANDROID_LOG_ERROR, "screenshot", "Failed to write image: %s", fileName.c_str());
-#else
-        fprintf(stderr, "screenshot: Failed to write image: %s\n", fileName.c_str());
-#endif
-        return false;
-    }
-#ifdef ANDROID
-    __android_log_print(ANDROID_LOG_INFO, "screenshot", "Saved image: %s", fileName.c_str());
-#else
-    printf("screenshot: Saved image: %s \n", fileName.c_str());
-    fflush(stdout);
-#endif
-    return true;
+    return writeResult;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL CreateInstance(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator,
@@ -1696,6 +1745,13 @@ void onQueuePresentKHR(VkQueue queue, VkPresentInfoKHR& presentInfo) {
     if (!settings.isFrameToCapture(frameNumber)) {
         return;
     }
+
+    if (settings.writerType == Settings::WriterType::PERFETTO) {
+        bool enabled = false;
+        ScreenshotDataSource::Trace([&](ScreenshotDataSource::TraceContext ctx) { enabled = true; });
+        if (!enabled) return;
+    }
+
     if (std::atomic_load(&pauseCapture)) {
         // Wake up screenshot thread to check whether we should unpause screenshot recording
         screenshotQueuedCV.notify_one();
