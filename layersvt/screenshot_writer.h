@@ -35,12 +35,12 @@ class PerfettoScreenshotWriter : public ScreenshotWriter {
    public:
     PerfettoScreenshotWriter();
     bool write(const char* pixels, int width, int height, int numChannels, int rowPitch, int frameNumber) override;
-    void setInProgress() override;
-    void setInPause() override;
-    bool isPaused() const override;
+    void setInProgress() override { isPaused_ = false; }
+    void setInPause() override { isPaused_ = true; }
+    bool isPaused() const override { return isPaused_; }
 
    private:
-    bool pauseFileRecorded = false;
+    bool isPaused_ = false;
 };
 
 }  // namespace screenshot

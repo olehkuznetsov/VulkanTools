@@ -903,11 +903,6 @@ bool PerfettoScreenshotWriter::write(const char* pixels, int width, int height, 
     return true;
 }
 
-void PerfettoScreenshotWriter::setInProgress() { pauseFileRecorded = false; }
-
-void PerfettoScreenshotWriter::setInPause() { pauseFileRecorded = true; }
-
-bool PerfettoScreenshotWriter::isPaused() const { return pauseFileRecorded; }
 
 std::list<std::shared_ptr<ScreenshotQueueData>> screenshotsData;
 std::unordered_map<VkImage, std::list<std::shared_ptr<ScreenshotQueueData>>> screenshotDataCache;

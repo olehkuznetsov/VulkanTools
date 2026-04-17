@@ -1,5 +1,22 @@
 #include "screenshots_perfetto_helpers.h"
 #include "screenshot_writer.h"
+#include <atomic>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <list>
+
+#ifdef ANDROID
+#include <android/log.h>
+#endif
+
+namespace screenshot {
+struct ScreenshotQueueData;
+extern std::atomic_bool pauseCapture;
+extern std::mutex globalLock;
+extern std::condition_variable screenshotSavedCV;
+extern std::list<std::shared_ptr<ScreenshotQueueData>> screenshotsData;
+}  // namespace screenshot
 
 PERFETTO_DEFINE_CATEGORIES(perfetto::Category("VulkanScreenshots").SetDescription("Vulkan Layer Screenshots"));
 
