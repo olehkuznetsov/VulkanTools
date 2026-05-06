@@ -47,6 +47,11 @@
 #include <crtdbg.h>
 #endif
 
+#if defined(__ANDROID__) || defined(__linux__)
+#include <pthread.h>
+#include <string.h>
+#endif
+
 #ifdef ANDROID
 #include <android/trace.h>
 #include <android/log.h>
@@ -1660,6 +1665,12 @@ VKAPI_ATTR VkResult VKAPI_CALL GetSwapchainImagesKHR(VkDevice device, VkSwapchai
 }
 
 void screenshotWriterThreadFunc() {
+#if defined(__ANDROID__) || defined(__linux__)
+    char buf[16] = {};
+    snprintf(buf, sizeof(buf), "VkScreenshot");
+    pthread_setname_np(pthread_self(), buf);
+#endif
+
     if (!std::atomic_load(&pauseCapture)) {
         screenshotWriter->setInProgress();
     }

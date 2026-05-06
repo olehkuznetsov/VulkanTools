@@ -116,6 +116,7 @@ if(BUILD_SCREENSHOT)
         vk_layer_table.cpp
         vk_layer_table.h
         screenshot_layer.md
+        layer_keep_alive.cpp
         json/VkLayer_screenshot.json.in
     )
 endif()
