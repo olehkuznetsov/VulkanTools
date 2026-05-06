@@ -162,7 +162,7 @@ EXPORT_FUNCTION VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionPrope
         return util_GetExtensionProperties(ARRAY_SIZE(instanceExtensions), instanceExtensions, pPropertyCount, pProperties);
     }
 
-    return VK_ERROR_LAYER_NOT_PRESENT;
+    return util_GetExtensionProperties(0, nullptr, pPropertyCount, pProperties);
 }
 
 EXPORT_FUNCTION VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(uint32_t* pPropertyCount,
@@ -196,6 +196,7 @@ EXPORT_FUNCTION VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionPropert
                                                                                     VkExtensionProperties* pProperties) {
     static const VkExtensionProperties deviceExtensions[] = {
         {VK_EXT_DEBUG_MARKER_EXTENSION_NAME, VK_EXT_DEBUG_MARKER_SPEC_VERSION},
+        {VK_EXT_DEBUG_UTILS_EXTENSION_NAME, VK_EXT_DEBUG_UTILS_SPEC_VERSION},
     };
 
     if (pLayerName != nullptr && strcmp(pLayerName, "VK_LAYER_GOOGLE_DebugMarker") == 0) {
@@ -209,7 +210,7 @@ EXPORT_FUNCTION VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionPropert
     if (pProperties == nullptr) {
         VkResult res = instance_dispatch_table(vk_instance)->EnumerateDeviceExtensionProperties(physicalDevice, pLayerName, pPropertyCount, pProperties);
         if (res == VK_SUCCESS) {
-            (*pPropertyCount) += 1;
+            (*pPropertyCount) += ARRAY_SIZE(deviceExtensions);
         }
         return res;
     }
@@ -219,9 +220,26 @@ EXPORT_FUNCTION VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionPropert
         VkResult res = instance_dispatch_table(vk_instance)->EnumerateDeviceExtensionProperties(physicalDevice, pLayerName, pPropertyCount, pProperties);
         if (res == VK_SUCCESS) {
             uint32_t originalCount = *pPropertyCount;
-            *pPropertyCount = std::min(originalCount + 1, requestedCount);
-            if (*pPropertyCount > originalCount) {
-                pProperties[originalCount] = deviceExtensions[0];
+            uint32_t additionalCount = 0;
+            
+            for (uint32_t i = 0; i < ARRAY_SIZE(deviceExtensions); ++i) {
+                bool found = false;
+                for (uint32_t j = 0; j < originalCount; ++j) {
+                    if (strcmp(pProperties[j].extensionName, deviceExtensions[i].extensionName) == 0) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    if (originalCount + additionalCount < requestedCount) {
+                        pProperties[originalCount + additionalCount] = deviceExtensions[i];
+                    }
+                    additionalCount++;
+                }
+            }
+            *pPropertyCount = originalCount + additionalCount;
+            if (*pPropertyCount > requestedCount) {
+                *pPropertyCount = requestedCount;
             }
         }
         return res;
