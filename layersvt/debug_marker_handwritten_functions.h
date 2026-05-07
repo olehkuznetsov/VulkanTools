@@ -196,7 +196,6 @@ EXPORT_FUNCTION VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionPropert
                                                                                     VkExtensionProperties* pProperties) {
     static const VkExtensionProperties deviceExtensions[] = {
         {VK_EXT_DEBUG_MARKER_EXTENSION_NAME, VK_EXT_DEBUG_MARKER_SPEC_VERSION},
-        {VK_EXT_DEBUG_UTILS_EXTENSION_NAME, VK_EXT_DEBUG_UTILS_SPEC_VERSION},
     };
 
     if (pLayerName != nullptr && strcmp(pLayerName, "VK_LAYER_GOOGLE_DebugMarker") == 0) {
