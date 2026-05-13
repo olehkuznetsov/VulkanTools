@@ -1605,10 +1605,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateSwapchainKHR(VkDevice device, const VkSwapc
         imageMap[swapchainImage].swapchain = *pSwapchain;
 
         screenshotDataCache[swapchainImage].clear();
-        std::shared_ptr<ScreenshotQueueData> data = std::make_shared<ScreenshotQueueData>();
-        if (prepareScreenshotData(*data, swapchainImage)) {
-            screenshotDataCache[swapchainImage].push_back(data);
-        }
     }
     return result;
 }
