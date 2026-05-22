@@ -586,6 +586,11 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEngi
     Timer timer(CPUTimingCategory::VkPhysicalDevice, "vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM");
     instance_dispatch_table(physicalDevice)->GetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM(physicalDevice, pQueueFamilyDataGraphProcessingEngineInfo, pQueueFamilyDataGraphProcessingEngineProperties);
 }
+VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, VkBaseOutStructure* pProperties) {
+    Timer timer(CPUTimingCategory::VkPhysicalDevice, "vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM");
+    VkResult result = instance_dispatch_table(physicalDevice)->GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(physicalDevice, queueFamilyIndex, pQueueFamilyDataGraphProperties, pProperties);
+    return result;
+}
 #if defined(VK_USE_PLATFORM_OHOS)
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateSurfaceOHOS(VkInstance instance, const VkSurfaceCreateInfoOHOS* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface) {
     Timer timer(CPUTimingCategory::VkInstance, "vkCreateSurfaceOHOS");
@@ -603,6 +608,28 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDeviceQueueFamilyPerformanceCo
     VkResult result = instance_dispatch_table(physicalDevice)->EnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM(physicalDevice, queueFamilyIndex, pCounterCount, pCounters, pCounterDescriptions);
     return result;
 }
+VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDeviceShaderInstrumentationMetricsARM(VkPhysicalDevice physicalDevice, uint32_t* pDescriptionCount, VkShaderInstrumentationMetricDescriptionARM* pDescriptions) {
+    Timer timer(CPUTimingCategory::VkPhysicalDevice, "vkEnumeratePhysicalDeviceShaderInstrumentationMetricsARM");
+    VkResult result = instance_dispatch_table(physicalDevice)->EnumeratePhysicalDeviceShaderInstrumentationMetricsARM(physicalDevice, pDescriptionCount, pDescriptions);
+    return result;
+}
+VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, const VkDataGraphOpticalFlowImageFormatInfoARM* pOpticalFlowImageFormatInfo, uint32_t* pFormatCount, VkDataGraphOpticalFlowImageFormatPropertiesARM* pImageFormatProperties) {
+    Timer timer(CPUTimingCategory::VkPhysicalDevice, "vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM");
+    VkResult result = instance_dispatch_table(physicalDevice)->GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(physicalDevice, queueFamilyIndex, pQueueFamilyDataGraphProperties, pOpticalFlowImageFormatInfo, pFormatCount, pImageFormatProperties);
+    return result;
+}
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateUbmSurfaceSEC(VkInstance instance, const VkUbmSurfaceCreateInfoSEC* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface) {
+    Timer timer(CPUTimingCategory::VkInstance, "vkCreateUbmSurfaceSEC");
+    VkResult result = instance_dispatch_table(instance)->CreateUbmSurfaceSEC(instance, pCreateInfo, pAllocator, pSurface);
+    return result;
+}
+VKAPI_ATTR VkBool32 VKAPI_CALL vkGetPhysicalDeviceUbmPresentationSupportSEC(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, struct ubm_device* device) {
+    Timer timer(CPUTimingCategory::VkPhysicalDevice, "vkGetPhysicalDeviceUbmPresentationSupportSEC");
+    VkBool32 result = instance_dispatch_table(physicalDevice)->GetPhysicalDeviceUbmPresentationSupportSEC(physicalDevice, queueFamilyIndex, device);
+    return result;
+}
+#endif  // VK_USE_PLATFORM_UBM_SEC
 
 // Autogen device functions
 
@@ -1897,6 +1924,95 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit2KHR(VkQueue queue, uint32_t submitC
     VkResult result = device_dispatch_table(queue)->QueueSubmit2KHR(queue, submitCount, pSubmits, fence);
     return result;
 }
+VKAPI_ATTR void VKAPI_CALL vkCmdBindIndexBuffer3KHR(VkCommandBuffer commandBuffer, const VkBindIndexBuffer3InfoKHR* pInfo) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdBindIndexBuffer3KHR");
+    device_dispatch_table(commandBuffer)->CmdBindIndexBuffer3KHR(commandBuffer, pInfo);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdBindVertexBuffers3KHR(VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount, const VkBindVertexBuffer3InfoKHR* pBindingInfos) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdBindVertexBuffers3KHR");
+    device_dispatch_table(commandBuffer)->CmdBindVertexBuffers3KHR(commandBuffer, firstBinding, bindingCount, pBindingInfos);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndirect2KHR(VkCommandBuffer commandBuffer, const VkDrawIndirect2InfoKHR* pInfo) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdDrawIndirect2KHR");
+    device_dispatch_table(commandBuffer)->CmdDrawIndirect2KHR(commandBuffer, pInfo);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexedIndirect2KHR(VkCommandBuffer commandBuffer, const VkDrawIndirect2InfoKHR* pInfo) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdDrawIndexedIndirect2KHR");
+    device_dispatch_table(commandBuffer)->CmdDrawIndexedIndirect2KHR(commandBuffer, pInfo);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdDispatchIndirect2KHR(VkCommandBuffer commandBuffer, const VkDispatchIndirect2InfoKHR* pInfo) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdDispatchIndirect2KHR");
+    device_dispatch_table(commandBuffer)->CmdDispatchIndirect2KHR(commandBuffer, pInfo);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyMemoryKHR(VkCommandBuffer commandBuffer, const VkCopyDeviceMemoryInfoKHR* pCopyMemoryInfo) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdCopyMemoryKHR");
+    device_dispatch_table(commandBuffer)->CmdCopyMemoryKHR(commandBuffer, pCopyMemoryInfo);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyMemoryToImageKHR(VkCommandBuffer commandBuffer, const VkCopyDeviceMemoryImageInfoKHR* pCopyMemoryInfo) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdCopyMemoryToImageKHR");
+    device_dispatch_table(commandBuffer)->CmdCopyMemoryToImageKHR(commandBuffer, pCopyMemoryInfo);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyImageToMemoryKHR(VkCommandBuffer commandBuffer, const VkCopyDeviceMemoryImageInfoKHR* pCopyMemoryInfo) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdCopyImageToMemoryKHR");
+    device_dispatch_table(commandBuffer)->CmdCopyImageToMemoryKHR(commandBuffer, pCopyMemoryInfo);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdUpdateMemoryKHR(VkCommandBuffer commandBuffer, const VkDeviceAddressRangeKHR* pDstRange, VkAddressCommandFlagsKHR dstFlags, VkDeviceSize dataSize, const void* pData) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdUpdateMemoryKHR");
+    device_dispatch_table(commandBuffer)->CmdUpdateMemoryKHR(commandBuffer, pDstRange, dstFlags, dataSize, pData);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdFillMemoryKHR(VkCommandBuffer commandBuffer, const VkDeviceAddressRangeKHR* pDstRange, VkAddressCommandFlagsKHR dstFlags, uint32_t data) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdFillMemoryKHR");
+    device_dispatch_table(commandBuffer)->CmdFillMemoryKHR(commandBuffer, pDstRange, dstFlags, data);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyQueryPoolResultsToMemoryKHR(VkCommandBuffer commandBuffer, VkQueryPool queryPool, uint32_t firstQuery, uint32_t queryCount, const VkStridedDeviceAddressRangeKHR* pDstRange, VkAddressCommandFlagsKHR dstFlags, VkQueryResultFlags queryResultFlags) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdCopyQueryPoolResultsToMemoryKHR");
+    device_dispatch_table(commandBuffer)->CmdCopyQueryPoolResultsToMemoryKHR(commandBuffer, queryPool, firstQuery, queryCount, pDstRange, dstFlags, queryResultFlags);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndirectCount2KHR(VkCommandBuffer commandBuffer, const VkDrawIndirectCount2InfoKHR* pInfo) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdDrawIndirectCount2KHR");
+    device_dispatch_table(commandBuffer)->CmdDrawIndirectCount2KHR(commandBuffer, pInfo);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexedIndirectCount2KHR(VkCommandBuffer commandBuffer, const VkDrawIndirectCount2InfoKHR* pInfo) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdDrawIndexedIndirectCount2KHR");
+    device_dispatch_table(commandBuffer)->CmdDrawIndexedIndirectCount2KHR(commandBuffer, pInfo);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdBeginConditionalRendering2EXT(VkCommandBuffer commandBuffer, const VkConditionalRenderingBeginInfo2EXT* pConditionalRenderingBegin) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdBeginConditionalRendering2EXT");
+    device_dispatch_table(commandBuffer)->CmdBeginConditionalRendering2EXT(commandBuffer, pConditionalRenderingBegin);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdBindTransformFeedbackBuffers2EXT(VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount, const VkBindTransformFeedbackBuffer2InfoEXT* pBindingInfos) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdBindTransformFeedbackBuffers2EXT");
+    device_dispatch_table(commandBuffer)->CmdBindTransformFeedbackBuffers2EXT(commandBuffer, firstBinding, bindingCount, pBindingInfos);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdBeginTransformFeedback2EXT(VkCommandBuffer commandBuffer, uint32_t firstCounterRange, uint32_t counterRangeCount, const VkBindTransformFeedbackBuffer2InfoEXT* pCounterInfos) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdBeginTransformFeedback2EXT");
+    device_dispatch_table(commandBuffer)->CmdBeginTransformFeedback2EXT(commandBuffer, firstCounterRange, counterRangeCount, pCounterInfos);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdEndTransformFeedback2EXT(VkCommandBuffer commandBuffer, uint32_t firstCounterRange, uint32_t counterRangeCount, const VkBindTransformFeedbackBuffer2InfoEXT* pCounterInfos) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdEndTransformFeedback2EXT");
+    device_dispatch_table(commandBuffer)->CmdEndTransformFeedback2EXT(commandBuffer, firstCounterRange, counterRangeCount, pCounterInfos);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndirectByteCount2EXT(VkCommandBuffer commandBuffer, uint32_t instanceCount, uint32_t firstInstance, const VkBindTransformFeedbackBuffer2InfoEXT* pCounterInfo, uint32_t counterOffset, uint32_t vertexStride) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdDrawIndirectByteCount2EXT");
+    device_dispatch_table(commandBuffer)->CmdDrawIndirectByteCount2EXT(commandBuffer, instanceCount, firstInstance, pCounterInfo, counterOffset, vertexStride);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdDrawMeshTasksIndirect2EXT(VkCommandBuffer commandBuffer, const VkDrawIndirect2InfoKHR* pInfo) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdDrawMeshTasksIndirect2EXT");
+    device_dispatch_table(commandBuffer)->CmdDrawMeshTasksIndirect2EXT(commandBuffer, pInfo);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdDrawMeshTasksIndirectCount2EXT(VkCommandBuffer commandBuffer, const VkDrawIndirectCount2InfoKHR* pInfo) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdDrawMeshTasksIndirectCount2EXT");
+    device_dispatch_table(commandBuffer)->CmdDrawMeshTasksIndirectCount2EXT(commandBuffer, pInfo);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdWriteMarkerToMemoryAMD(VkCommandBuffer commandBuffer, const VkMemoryMarkerInfoAMD* pInfo) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdWriteMarkerToMemoryAMD");
+    device_dispatch_table(commandBuffer)->CmdWriteMarkerToMemoryAMD(commandBuffer, pInfo);
+}
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateAccelerationStructure2KHR(VkDevice device, const VkAccelerationStructureCreateInfo2KHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkAccelerationStructureKHR* pAccelerationStructure) {
+    Timer timer(CPUTimingCategory::VkDevice, "vkCreateAccelerationStructure2KHR");
+    VkResult result = device_dispatch_table(device)->CreateAccelerationStructure2KHR(device, pCreateInfo, pAllocator, pAccelerationStructure);
+    return result;
+}
 VKAPI_ATTR void VKAPI_CALL vkCmdCopyBuffer2KHR(VkCommandBuffer commandBuffer, const VkCopyBufferInfo2* pCopyBufferInfo) {
     Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdCopyBuffer2KHR");
     device_dispatch_table(commandBuffer)->CmdCopyBuffer2KHR(commandBuffer, pCopyBufferInfo);
@@ -2027,6 +2143,16 @@ VKAPI_ATTR void VKAPI_CALL vkCmdCopyMemoryIndirectKHR(VkCommandBuffer commandBuf
 VKAPI_ATTR void VKAPI_CALL vkCmdCopyMemoryToImageIndirectKHR(VkCommandBuffer commandBuffer, const VkCopyMemoryToImageIndirectInfoKHR* pCopyMemoryToImageIndirectInfo) {
     Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdCopyMemoryToImageIndirectKHR");
     device_dispatch_table(commandBuffer)->CmdCopyMemoryToImageIndirectKHR(commandBuffer, pCopyMemoryToImageIndirectInfo);
+}
+VKAPI_ATTR VkResult VKAPI_CALL vkGetDeviceFaultReportsKHR(VkDevice device, uint64_t timeout, uint32_t* pFaultCounts, VkDeviceFaultInfoKHR* pFaultInfo) {
+    Timer timer(CPUTimingCategory::VkDevice, "vkGetDeviceFaultReportsKHR");
+    VkResult result = device_dispatch_table(device)->GetDeviceFaultReportsKHR(device, timeout, pFaultCounts, pFaultInfo);
+    return result;
+}
+VKAPI_ATTR VkResult VKAPI_CALL vkGetDeviceFaultDebugInfoKHR(VkDevice device, VkDeviceFaultDebugInfoKHR* pDebugInfo) {
+    Timer timer(CPUTimingCategory::VkDevice, "vkGetDeviceFaultDebugInfoKHR");
+    VkResult result = device_dispatch_table(device)->GetDeviceFaultDebugInfoKHR(device, pDebugInfo);
+    return result;
 }
 VKAPI_ATTR void VKAPI_CALL vkCmdEndRendering2KHR(VkCommandBuffer commandBuffer, const VkRenderingEndInfoKHR* pRenderingEndInfo) {
     Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdEndRendering2KHR");
@@ -2367,7 +2493,7 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyAccelerationStructureNV(VkDevice device, VkA
     Timer timer(CPUTimingCategory::VkDevice, "vkDestroyAccelerationStructureNV");
     device_dispatch_table(device)->DestroyAccelerationStructureNV(device, accelerationStructure, pAllocator);
 }
-VKAPI_ATTR void VKAPI_CALL vkGetAccelerationStructureMemoryRequirementsNV(VkDevice device, const VkAccelerationStructureMemoryRequirementsInfoNV* pInfo, VkMemoryRequirements2KHR* pMemoryRequirements) {
+VKAPI_ATTR void VKAPI_CALL vkGetAccelerationStructureMemoryRequirementsNV(VkDevice device, const VkAccelerationStructureMemoryRequirementsInfoNV* pInfo, VkMemoryRequirements2* pMemoryRequirements) {
     Timer timer(CPUTimingCategory::VkDevice, "vkGetAccelerationStructureMemoryRequirementsNV");
     device_dispatch_table(device)->GetAccelerationStructureMemoryRequirementsNV(device, pInfo, pMemoryRequirements);
 }
@@ -2689,6 +2815,11 @@ VKAPI_ATTR void VKAPI_CALL vkGetPrivateDataEXT(VkDevice device, VkObjectType obj
     Timer timer(CPUTimingCategory::VkDevice, "vkGetPrivateDataEXT");
     device_dispatch_table(device)->GetPrivateDataEXT(device, objectType, objectHandle, privateDataSlot, pData);
 }
+VKAPI_ATTR VkResult VKAPI_CALL vkQueueSetPerfHintQCOM(VkQueue queue, const VkPerfHintInfoQCOM* pPerfHintInfo) {
+    Timer timer(CPUTimingCategory::VkQueue, "vkQueueSetPerfHintQCOM");
+    VkResult result = device_dispatch_table(queue)->QueueSetPerfHintQCOM(queue, pPerfHintInfo);
+    return result;
+}
 #if defined(VK_ENABLE_BETA_EXTENSIONS)
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateCudaModuleNV(VkDevice device, const VkCudaModuleCreateInfoNV* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkCudaModuleNV* pModule) {
     Timer timer(CPUTimingCategory::VkDevice, "vkCreateCudaModuleNV");
@@ -2862,7 +2993,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetMemoryRemoteAddressNV(VkDevice device, const
     VkResult result = device_dispatch_table(device)->GetMemoryRemoteAddressNV(device, pMemoryGetRemoteAddressInfo, pAddress);
     return result;
 }
-VKAPI_ATTR VkResult VKAPI_CALL vkGetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoEXT* pPipelineInfo, VkBaseOutStructure* pPipelineProperties) {
+VKAPI_ATTR VkResult VKAPI_CALL vkGetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoKHR* pPipelineInfo, VkBaseOutStructure* pPipelineProperties) {
     Timer timer(CPUTimingCategory::VkDevice, "vkGetPipelinePropertiesEXT");
     VkResult result = device_dispatch_table(device)->GetPipelinePropertiesEXT(device, pPipelineInfo, pPipelineProperties);
     return result;
@@ -2972,6 +3103,10 @@ VKAPI_ATTR void VKAPI_CALL vkCmdDrawClusterIndirectHUAWEI(VkCommandBuffer comman
 VKAPI_ATTR void VKAPI_CALL vkSetDeviceMemoryPriorityEXT(VkDevice device, VkDeviceMemory memory, float priority) {
     Timer timer(CPUTimingCategory::VkDevice, "vkSetDeviceMemoryPriorityEXT");
     device_dispatch_table(device)->SetDeviceMemoryPriorityEXT(device, memory, priority);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdSetDispatchParametersARM(VkCommandBuffer commandBuffer, const VkDispatchParametersARM* pDispatchParameters) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdSetDispatchParametersARM");
+    device_dispatch_table(commandBuffer)->CmdSetDispatchParametersARM(commandBuffer, pDispatchParameters);
 }
 VKAPI_ATTR void VKAPI_CALL vkGetDescriptorSetLayoutHostMappingInfoVALVE(VkDevice device, const VkDescriptorSetBindingReferenceVALVE* pBindingReference, VkDescriptorSetLayoutHostMappingInfoVALVE* pHostMapping) {
     Timer timer(CPUTimingCategory::VkDevice, "vkGetDescriptorSetLayoutHostMappingInfoVALVE");
@@ -3428,6 +3563,32 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetMemoryMetalHandlePropertiesEXT(VkDevice devi
     return result;
 }
 #endif  // VK_USE_PLATFORM_METAL_EXT
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderInstrumentationARM(VkDevice device, const VkShaderInstrumentationCreateInfoARM* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkShaderInstrumentationARM* pInstrumentation) {
+    Timer timer(CPUTimingCategory::VkDevice, "vkCreateShaderInstrumentationARM");
+    VkResult result = device_dispatch_table(device)->CreateShaderInstrumentationARM(device, pCreateInfo, pAllocator, pInstrumentation);
+    return result;
+}
+VKAPI_ATTR void VKAPI_CALL vkDestroyShaderInstrumentationARM(VkDevice device, VkShaderInstrumentationARM instrumentation, const VkAllocationCallbacks* pAllocator) {
+    Timer timer(CPUTimingCategory::VkDevice, "vkDestroyShaderInstrumentationARM");
+    device_dispatch_table(device)->DestroyShaderInstrumentationARM(device, instrumentation, pAllocator);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdBeginShaderInstrumentationARM(VkCommandBuffer commandBuffer, VkShaderInstrumentationARM instrumentation) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdBeginShaderInstrumentationARM");
+    device_dispatch_table(commandBuffer)->CmdBeginShaderInstrumentationARM(commandBuffer, instrumentation);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdEndShaderInstrumentationARM(VkCommandBuffer commandBuffer) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdEndShaderInstrumentationARM");
+    device_dispatch_table(commandBuffer)->CmdEndShaderInstrumentationARM(commandBuffer);
+}
+VKAPI_ATTR VkResult VKAPI_CALL vkGetShaderInstrumentationValuesARM(VkDevice device, VkShaderInstrumentationARM instrumentation, uint32_t* pMetricBlockCount, void* pMetricValues, VkShaderInstrumentationValuesFlagsARM flags) {
+    Timer timer(CPUTimingCategory::VkDevice, "vkGetShaderInstrumentationValuesARM");
+    VkResult result = device_dispatch_table(device)->GetShaderInstrumentationValuesARM(device, instrumentation, pMetricBlockCount, pMetricValues, flags);
+    return result;
+}
+VKAPI_ATTR void VKAPI_CALL vkClearShaderInstrumentationMetricsARM(VkDevice device, VkShaderInstrumentationARM instrumentation) {
+    Timer timer(CPUTimingCategory::VkDevice, "vkClearShaderInstrumentationMetricsARM");
+    device_dispatch_table(device)->ClearShaderInstrumentationMetricsARM(device, instrumentation);
+}
 VKAPI_ATTR void VKAPI_CALL vkCmdEndRendering2EXT(VkCommandBuffer commandBuffer, const VkRenderingEndInfoKHR* pRenderingEndInfo) {
     Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdEndRendering2EXT");
     device_dispatch_table(commandBuffer)->CmdEndRendering2EXT(commandBuffer, pRenderingEndInfo);
@@ -3439,6 +3600,10 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBeginCustomResolveEXT(VkCommandBuffer commandBuf
 VKAPI_ATTR void VKAPI_CALL vkCmdSetComputeOccupancyPriorityNV(VkCommandBuffer commandBuffer, const VkComputeOccupancyPriorityParametersNV* pParameters) {
     Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdSetComputeOccupancyPriorityNV");
     device_dispatch_table(commandBuffer)->CmdSetComputeOccupancyPriorityNV(commandBuffer, pParameters);
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdSetPrimitiveRestartIndexEXT(VkCommandBuffer commandBuffer, uint32_t primitiveRestartIndex) {
+    Timer timer(CPUTimingCategory::VkCommandBuffer, "vkCmdSetPrimitiveRestartIndexEXT");
+    device_dispatch_table(commandBuffer)->CmdSetPrimitiveRestartIndexEXT(commandBuffer, primitiveRestartIndex);
 }
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateAccelerationStructureKHR(VkDevice device, const VkAccelerationStructureCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkAccelerationStructureKHR* pAccelerationStructure) {
     Timer timer(CPUTimingCategory::VkDevice, "vkCreateAccelerationStructureKHR");
@@ -3823,6 +3988,8 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL cputiming_known_instance_functions(VkIn
         return reinterpret_cast<PFN_vkVoidFunction>(vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM);
     if (strcmp(pName, "vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM") == 0)
         return reinterpret_cast<PFN_vkVoidFunction>(vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM);
+    if (strcmp(pName, "vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM") == 0)
+        return reinterpret_cast<PFN_vkVoidFunction>(vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM);
 #if defined(VK_USE_PLATFORM_OHOS)
     if (strcmp(pName, "vkCreateSurfaceOHOS") == 0)
         return reinterpret_cast<PFN_vkVoidFunction>(vkCreateSurfaceOHOS);
@@ -3831,6 +3998,16 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL cputiming_known_instance_functions(VkIn
         return reinterpret_cast<PFN_vkVoidFunction>(vkGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV);
     if (strcmp(pName, "vkEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM") == 0)
         return reinterpret_cast<PFN_vkVoidFunction>(vkEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM);
+    if (strcmp(pName, "vkEnumeratePhysicalDeviceShaderInstrumentationMetricsARM") == 0)
+        return reinterpret_cast<PFN_vkVoidFunction>(vkEnumeratePhysicalDeviceShaderInstrumentationMetricsARM);
+    if (strcmp(pName, "vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM") == 0)
+        return reinterpret_cast<PFN_vkVoidFunction>(vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM);
+#if defined(VK_USE_PLATFORM_UBM_SEC)
+    if (strcmp(pName, "vkCreateUbmSurfaceSEC") == 0)
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCreateUbmSurfaceSEC);
+    if (strcmp(pName, "vkGetPhysicalDeviceUbmPresentationSupportSEC") == 0)
+        return reinterpret_cast<PFN_vkVoidFunction>(vkGetPhysicalDeviceUbmPresentationSupportSEC);
+#endif  // VK_USE_PLATFORM_UBM_SEC
 
     return nullptr;
 }
@@ -4427,6 +4604,50 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL cputiming_known_device_functions(VkDevi
         return reinterpret_cast<PFN_vkVoidFunction>(vkCmdWriteTimestamp2KHR);
     if (strcmp(pName, "vkQueueSubmit2KHR") == 0 && (!device || device_dispatch_table(device)->QueueSubmit2KHR))
         return reinterpret_cast<PFN_vkVoidFunction>(vkQueueSubmit2KHR);
+    if (strcmp(pName, "vkCmdBindIndexBuffer3KHR") == 0 && (!device || device_dispatch_table(device)->CmdBindIndexBuffer3KHR))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdBindIndexBuffer3KHR);
+    if (strcmp(pName, "vkCmdBindVertexBuffers3KHR") == 0 && (!device || device_dispatch_table(device)->CmdBindVertexBuffers3KHR))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdBindVertexBuffers3KHR);
+    if (strcmp(pName, "vkCmdDrawIndirect2KHR") == 0 && (!device || device_dispatch_table(device)->CmdDrawIndirect2KHR))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdDrawIndirect2KHR);
+    if (strcmp(pName, "vkCmdDrawIndexedIndirect2KHR") == 0 && (!device || device_dispatch_table(device)->CmdDrawIndexedIndirect2KHR))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdDrawIndexedIndirect2KHR);
+    if (strcmp(pName, "vkCmdDispatchIndirect2KHR") == 0 && (!device || device_dispatch_table(device)->CmdDispatchIndirect2KHR))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdDispatchIndirect2KHR);
+    if (strcmp(pName, "vkCmdCopyMemoryKHR") == 0 && (!device || device_dispatch_table(device)->CmdCopyMemoryKHR))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdCopyMemoryKHR);
+    if (strcmp(pName, "vkCmdCopyMemoryToImageKHR") == 0 && (!device || device_dispatch_table(device)->CmdCopyMemoryToImageKHR))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdCopyMemoryToImageKHR);
+    if (strcmp(pName, "vkCmdCopyImageToMemoryKHR") == 0 && (!device || device_dispatch_table(device)->CmdCopyImageToMemoryKHR))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdCopyImageToMemoryKHR);
+    if (strcmp(pName, "vkCmdUpdateMemoryKHR") == 0 && (!device || device_dispatch_table(device)->CmdUpdateMemoryKHR))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdUpdateMemoryKHR);
+    if (strcmp(pName, "vkCmdFillMemoryKHR") == 0 && (!device || device_dispatch_table(device)->CmdFillMemoryKHR))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdFillMemoryKHR);
+    if (strcmp(pName, "vkCmdCopyQueryPoolResultsToMemoryKHR") == 0 && (!device || device_dispatch_table(device)->CmdCopyQueryPoolResultsToMemoryKHR))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdCopyQueryPoolResultsToMemoryKHR);
+    if (strcmp(pName, "vkCmdDrawIndirectCount2KHR") == 0 && (!device || device_dispatch_table(device)->CmdDrawIndirectCount2KHR))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdDrawIndirectCount2KHR);
+    if (strcmp(pName, "vkCmdDrawIndexedIndirectCount2KHR") == 0 && (!device || device_dispatch_table(device)->CmdDrawIndexedIndirectCount2KHR))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdDrawIndexedIndirectCount2KHR);
+    if (strcmp(pName, "vkCmdBeginConditionalRendering2EXT") == 0 && (!device || device_dispatch_table(device)->CmdBeginConditionalRendering2EXT))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdBeginConditionalRendering2EXT);
+    if (strcmp(pName, "vkCmdBindTransformFeedbackBuffers2EXT") == 0 && (!device || device_dispatch_table(device)->CmdBindTransformFeedbackBuffers2EXT))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdBindTransformFeedbackBuffers2EXT);
+    if (strcmp(pName, "vkCmdBeginTransformFeedback2EXT") == 0 && (!device || device_dispatch_table(device)->CmdBeginTransformFeedback2EXT))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdBeginTransformFeedback2EXT);
+    if (strcmp(pName, "vkCmdEndTransformFeedback2EXT") == 0 && (!device || device_dispatch_table(device)->CmdEndTransformFeedback2EXT))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdEndTransformFeedback2EXT);
+    if (strcmp(pName, "vkCmdDrawIndirectByteCount2EXT") == 0 && (!device || device_dispatch_table(device)->CmdDrawIndirectByteCount2EXT))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdDrawIndirectByteCount2EXT);
+    if (strcmp(pName, "vkCmdDrawMeshTasksIndirect2EXT") == 0 && (!device || device_dispatch_table(device)->CmdDrawMeshTasksIndirect2EXT))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdDrawMeshTasksIndirect2EXT);
+    if (strcmp(pName, "vkCmdDrawMeshTasksIndirectCount2EXT") == 0 && (!device || device_dispatch_table(device)->CmdDrawMeshTasksIndirectCount2EXT))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdDrawMeshTasksIndirectCount2EXT);
+    if (strcmp(pName, "vkCmdWriteMarkerToMemoryAMD") == 0 && (!device || device_dispatch_table(device)->CmdWriteMarkerToMemoryAMD))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdWriteMarkerToMemoryAMD);
+    if (strcmp(pName, "vkCreateAccelerationStructure2KHR") == 0 && (!device || device_dispatch_table(device)->CreateAccelerationStructure2KHR))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCreateAccelerationStructure2KHR);
     if (strcmp(pName, "vkCmdCopyBuffer2KHR") == 0 && (!device || device_dispatch_table(device)->CmdCopyBuffer2KHR))
         return reinterpret_cast<PFN_vkVoidFunction>(vkCmdCopyBuffer2KHR);
     if (strcmp(pName, "vkCmdCopyImage2KHR") == 0 && (!device || device_dispatch_table(device)->CmdCopyImage2KHR))
@@ -4489,6 +4710,10 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL cputiming_known_device_functions(VkDevi
         return reinterpret_cast<PFN_vkVoidFunction>(vkCmdCopyMemoryIndirectKHR);
     if (strcmp(pName, "vkCmdCopyMemoryToImageIndirectKHR") == 0 && (!device || device_dispatch_table(device)->CmdCopyMemoryToImageIndirectKHR))
         return reinterpret_cast<PFN_vkVoidFunction>(vkCmdCopyMemoryToImageIndirectKHR);
+    if (strcmp(pName, "vkGetDeviceFaultReportsKHR") == 0 && (!device || device_dispatch_table(device)->GetDeviceFaultReportsKHR))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkGetDeviceFaultReportsKHR);
+    if (strcmp(pName, "vkGetDeviceFaultDebugInfoKHR") == 0 && (!device || device_dispatch_table(device)->GetDeviceFaultDebugInfoKHR))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkGetDeviceFaultDebugInfoKHR);
     if (strcmp(pName, "vkCmdEndRendering2KHR") == 0 && (!device || device_dispatch_table(device)->CmdEndRendering2KHR))
         return reinterpret_cast<PFN_vkVoidFunction>(vkCmdEndRendering2KHR);
     if (strcmp(pName, "vkDebugMarkerSetObjectTagEXT") == 0 && (!device || device_dispatch_table(device)->DebugMarkerSetObjectTagEXT))
@@ -4791,6 +5016,8 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL cputiming_known_device_functions(VkDevi
         return reinterpret_cast<PFN_vkVoidFunction>(vkSetPrivateDataEXT);
     if (strcmp(pName, "vkGetPrivateDataEXT") == 0 && (!device || device_dispatch_table(device)->GetPrivateDataEXT))
         return reinterpret_cast<PFN_vkVoidFunction>(vkGetPrivateDataEXT);
+    if (strcmp(pName, "vkQueueSetPerfHintQCOM") == 0 && (!device || device_dispatch_table(device)->QueueSetPerfHintQCOM))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkQueueSetPerfHintQCOM);
 #if defined(VK_ENABLE_BETA_EXTENSIONS)
     if (strcmp(pName, "vkCreateCudaModuleNV") == 0 && (!device || device_dispatch_table(device)->CreateCudaModuleNV))
         return reinterpret_cast<PFN_vkVoidFunction>(vkCreateCudaModuleNV);
@@ -4923,6 +5150,8 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL cputiming_known_device_functions(VkDevi
         return reinterpret_cast<PFN_vkVoidFunction>(vkCmdDrawClusterIndirectHUAWEI);
     if (strcmp(pName, "vkSetDeviceMemoryPriorityEXT") == 0 && (!device || device_dispatch_table(device)->SetDeviceMemoryPriorityEXT))
         return reinterpret_cast<PFN_vkVoidFunction>(vkSetDeviceMemoryPriorityEXT);
+    if (strcmp(pName, "vkCmdSetDispatchParametersARM") == 0 && (!device || device_dispatch_table(device)->CmdSetDispatchParametersARM))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdSetDispatchParametersARM);
     if (strcmp(pName, "vkGetDescriptorSetLayoutHostMappingInfoVALVE") == 0 && (!device || device_dispatch_table(device)->GetDescriptorSetLayoutHostMappingInfoVALVE))
         return reinterpret_cast<PFN_vkVoidFunction>(vkGetDescriptorSetLayoutHostMappingInfoVALVE);
     if (strcmp(pName, "vkGetDescriptorSetHostMappingVALVE") == 0 && (!device || device_dispatch_table(device)->GetDescriptorSetHostMappingVALVE))
@@ -5139,12 +5368,26 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL cputiming_known_device_functions(VkDevi
     if (strcmp(pName, "vkGetMemoryMetalHandlePropertiesEXT") == 0 && (!device || device_dispatch_table(device)->GetMemoryMetalHandlePropertiesEXT))
         return reinterpret_cast<PFN_vkVoidFunction>(vkGetMemoryMetalHandlePropertiesEXT);
 #endif  // VK_USE_PLATFORM_METAL_EXT
+    if (strcmp(pName, "vkCreateShaderInstrumentationARM") == 0 && (!device || device_dispatch_table(device)->CreateShaderInstrumentationARM))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCreateShaderInstrumentationARM);
+    if (strcmp(pName, "vkDestroyShaderInstrumentationARM") == 0 && (!device || device_dispatch_table(device)->DestroyShaderInstrumentationARM))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkDestroyShaderInstrumentationARM);
+    if (strcmp(pName, "vkCmdBeginShaderInstrumentationARM") == 0 && (!device || device_dispatch_table(device)->CmdBeginShaderInstrumentationARM))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdBeginShaderInstrumentationARM);
+    if (strcmp(pName, "vkCmdEndShaderInstrumentationARM") == 0 && (!device || device_dispatch_table(device)->CmdEndShaderInstrumentationARM))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdEndShaderInstrumentationARM);
+    if (strcmp(pName, "vkGetShaderInstrumentationValuesARM") == 0 && (!device || device_dispatch_table(device)->GetShaderInstrumentationValuesARM))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkGetShaderInstrumentationValuesARM);
+    if (strcmp(pName, "vkClearShaderInstrumentationMetricsARM") == 0 && (!device || device_dispatch_table(device)->ClearShaderInstrumentationMetricsARM))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkClearShaderInstrumentationMetricsARM);
     if (strcmp(pName, "vkCmdEndRendering2EXT") == 0 && (!device || device_dispatch_table(device)->CmdEndRendering2EXT))
         return reinterpret_cast<PFN_vkVoidFunction>(vkCmdEndRendering2EXT);
     if (strcmp(pName, "vkCmdBeginCustomResolveEXT") == 0 && (!device || device_dispatch_table(device)->CmdBeginCustomResolveEXT))
         return reinterpret_cast<PFN_vkVoidFunction>(vkCmdBeginCustomResolveEXT);
     if (strcmp(pName, "vkCmdSetComputeOccupancyPriorityNV") == 0 && (!device || device_dispatch_table(device)->CmdSetComputeOccupancyPriorityNV))
         return reinterpret_cast<PFN_vkVoidFunction>(vkCmdSetComputeOccupancyPriorityNV);
+    if (strcmp(pName, "vkCmdSetPrimitiveRestartIndexEXT") == 0 && (!device || device_dispatch_table(device)->CmdSetPrimitiveRestartIndexEXT))
+        return reinterpret_cast<PFN_vkVoidFunction>(vkCmdSetPrimitiveRestartIndexEXT);
     if (strcmp(pName, "vkCreateAccelerationStructureKHR") == 0 && (!device || device_dispatch_table(device)->CreateAccelerationStructureKHR))
         return reinterpret_cast<PFN_vkVoidFunction>(vkCreateAccelerationStructureKHR);
     if (strcmp(pName, "vkDestroyAccelerationStructureKHR") == 0 && (!device || device_dispatch_table(device)->DestroyAccelerationStructureKHR))
