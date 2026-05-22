@@ -42,8 +42,7 @@ Configurator& GetTestConfigurator() {
     path.Create();
 
     Configurator& configurator = Configurator::Get();
-    configurator.layers.LoadLayersFromPath(":/layers/VK_LAYER_LUNARG_reference_1_2_1.json", LAYER_TYPE_EXPLICIT,
-                                           CONFIGURATOR_MODE_CMD);
+    configurator.layers.LoadLayers(":/layers/VK_LAYER_LUNARG_reference_1_2_1.json", LAYER_TYPE_EXPLICIT, CONFIGURATOR_MODE_CMD);
     configurator.configurations.CreateConfiguration(configurator.layers, "configuration");
     configurator.SetActiveConfigurationName("configuration");
     return configurator;
@@ -56,6 +55,15 @@ std::string Read(const Path& path) {
     QString data = file.readAll();
     file.close();
     return data.toStdString();
+}
+
+TEST(test_settings, init) {
+    const std::vector<VkLayerSettingEXT>& settings = layer_settings.settings();
+    std::vector<const char*> layers = layer_settings.layers();
+
+    VkInstanceCreateInfo create_info;
+    create_info.enabledLayerCount = static_cast<uint32_t>(layers.size());
+    create_info.ppEnabledLayerNames = &layers[0];
 }
 
 TEST(test_settings, config_generate_html) {

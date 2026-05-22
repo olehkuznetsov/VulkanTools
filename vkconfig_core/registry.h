@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2020-2021 Valve Corporation
- * Copyright (c) 2020-2021 LunarG, Inc.
+ * Copyright (c) 2020-2026 Valve Corporation
+ * Copyright (c) 2020-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,8 +33,8 @@ void AppendRegistryEntriesForLayers(QString override_file, QString settings_file
 
 void RemoveRegistryEntriesForLayers();
 
-std::vector<LayersPathInfo> LoadRegistrySystemLayers(const char* path);
+std::vector<Path> LoadRegistrySystemLayers(const char* path);
 
-std::vector<LayersPathInfo> LoadRegistrySoftwareLayers(const char* path, LayerType type);
+std::vector<Path> LoadRegistrySoftwareLayers(const char* path, LayerType type);
 
 #endif  // VKC_ENV == VKC_ENV_WIN32

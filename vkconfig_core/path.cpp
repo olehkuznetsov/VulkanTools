@@ -189,6 +189,28 @@ bool Path::Create(bool as_file) const {
     return true;
 }
 
+bool Path::Backup() const {
+    if (this->IsFile()) {
+        QFile file(this->AbsolutePath().c_str());
+
+        QDateTime date_time = QDateTime::currentDateTime();
+        std::string date = date_time.toString(Qt::ISODate).toStdString();
+        std::replace(date.begin(), date.end(), ':', '-');
+
+        std::string path = this->AbsolutePath();
+        std::string extension = path.substr(path.find_last_of("."));
+        std::string prefix = path.substr(0, path.find_last_of("."));
+        //"vkconfig-" + date_time.toString(Qt::ISODate).toStdString() + ".json";
+
+        std::string dest = prefix + "-" + date + extension;
+
+        bool result = file.copy(dest.c_str());
+        return result;
+    } else {
+        return false;
+    }
+}
+
 bool Path::Remove() const {
     if (!this->Exists()) {
         return false;
@@ -546,6 +568,16 @@ std::string AbsolutePath(Path::Builtin path, bool native_separator) { return Pat
 
 std::string RelativePath(Path::Builtin path) { return Path(path).RelativePath(); }
 
+bool Found(const std::vector<Path>& data, const Path& path) {
+    for (std::size_t i = 0, n = data.size(); i < n; ++i) {
+        if (data[i] == path) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 std::vector<Path> CollectFilePaths(const Path& path, const char* filter) {
     std::vector<Path> result;
 
@@ -563,6 +595,56 @@ std::vector<Path> CollectFilePaths(const Path& path, const char* filter) {
     }
 
     return result;
+}
+
+std::vector<Path> CollectLayersPaths(const Path& directory) {
+    std::vector<Path> paths = CollectFilePaths(directory, "*json");
+
+    std::vector<Path> results;
+    for (std::size_t i = 0, n = paths.size(); i < n; ++i) {
+        const QJsonDocument& document = ::ParseJsonFile(paths[i].AbsolutePath().c_str());
+        if (document.isNull() || document.isEmpty()) {
+            continue;
+        }
+
+        const QJsonObject& json_root_object = document.object();
+        if (json_root_object.value("file_format_version") == QJsonValue::Undefined) {
+            continue;  // Not a layer JSON file
+        }
+
+        if (json_root_object.value("layer") == QJsonValue::Undefined && json_root_object.value("layers") == QJsonValue::Undefined) {
+            continue;
+        }
+
+        results.push_back(paths[i]);
+    }
+
+    return results;
+}
+
+std::vector<Path> CollectDriversPaths(const Path& directory) {
+    std::vector<Path> paths = CollectFilePaths(directory, "*json");
+
+    std::vector<Path> results;
+    for (std::size_t i = 0, n = paths.size(); i < n; ++i) {
+        const QJsonDocument& document = ::ParseJsonFile(paths[i].AbsolutePath().c_str());
+        if (document.isNull() || document.isEmpty()) {
+            continue;
+        }
+
+        const QJsonObject& json_root_object = document.object();
+        if (json_root_object.value("file_format_version") == QJsonValue::Undefined) {
+            continue;  // Not a driver JSON file
+        }
+
+        if (json_root_object.value("ICD") == QJsonValue::Undefined) {
+            continue;
+        }
+
+        results.push_back(paths[i]);
+    }
+
+    return results;
 }
 
 static std::vector<std::string> LoadProfiles(const QJsonDocument& doc) {

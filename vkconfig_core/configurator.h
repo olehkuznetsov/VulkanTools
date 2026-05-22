@@ -28,12 +28,14 @@
 #include "executable_manager.h"
 #include "type_platform.h"
 #include "type_override_area.h"
+#include "type_stdout_display.h"
 #include "type_hide_message.h"
 #include "type_tab.h"
 #include "type_executable_mode.h"
 #include "type_executable_all_enabled_behavior.h"
 #include "type_configurator_mode.h"
 #include "type_diagnostic_mode.h"
+#include "type_layers_display_mode.h"
 #include "type_generate_settings.h"
 #include "type_driver_mode.h"
 #include "type_theme_mode.h"
@@ -68,7 +70,6 @@ class Configurator {
     struct LoaderSettings {
         Path executable_path;
         std::vector<LoaderLayerSettings> layers;
-        bool override_layers = true;
     };
 
     static Configurator& Get();
@@ -165,27 +166,29 @@ class Configurator {
 
     const ConfiguratorMode& mode;
 
-    bool force_full_loader_log = false;
     bool reset_hard = false;
     bool has_crashed = false;
     TabType active_tab = TAB_CONFIGURATIONS;
-    bool advanced = true;
+    LayersDisplayMode layers_display_mode = LAYERS_DISPLAY_EXPLICIT_ONLY;
     Path last_path_status = Path(Path::HOME).AbsolutePath() + "/diagnostics";
-    Path last_driver_path = Path(Path::HOME).AbsolutePath() + "/*.json";
+    Path last_driver_dir = Path(Path::HOME).AbsolutePath();
     Path last_path_launch_log = Path(Path::HOME).AbsolutePath() + "/application_log.txt";
     Version online_sdk_version = Version::NONE;
     Version latest_sdk_version = Version::NONE;
     Version current_sdk_version = Version::VKHEADER;
 
+    bool configuration_show_scope = false;
+    bool layers_override_enabled = true;
     bool driver_override_enabled = false;
     DriverMode driver_override_mode = DRIVER_MODE_SINGLE;
     DeviceInfo driver_override_info;
     std::vector<DeviceInfo> driver_override_list;
     std::map<Path, bool> driver_paths;
     bool driver_paths_enabled = false;
-
     bool loader_log_enabled = false;
     int loader_log_messages_flags = GetBit(LOG_ERROR);
+
+    StdoutDisplay stdout_display = STDOUT_DISPLAY_ON_EXIT;
 
     QByteArray window_geometry;
     QByteArray window_state;
@@ -194,6 +197,7 @@ class Configurator {
     bool theme_dark_alternate_enabled = false;
     QColor theme_light_alternate_color = 0xF8F8F8;
     QColor theme_dark_alternate_color = 0x202020;
+    int app_log_max_blocks = 2048;
 
    private:
     int hide_message_boxes_flags = 0;

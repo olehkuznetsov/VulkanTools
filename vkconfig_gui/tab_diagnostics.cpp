@@ -28,8 +28,10 @@
 #include <QMenu>
 #include <QDesktopServices>
 #include <QShortcut>
+#include <QScrollBar>
 
-TabDiagnostics::TabDiagnostics(MainWindow &window, std::shared_ptr<Ui::MainWindow> ui) : Tab(TAB_DIAGNOSTIC, window, ui) {
+TabDiagnostics::TabDiagnostics(MainWindow &window, std::shared_ptr<Ui::MainWindow> ui)
+    : Tab(TAB_DIAGNOSTIC, window, ui), timer_search(new QTimer(this)) {
     this->connect(this->ui->diagnostic_mode, SIGNAL(currentIndexChanged(int)), this, SLOT(on_mode_changed(int)));
     this->connect(this->ui->diagnostic_mode_options, SIGNAL(currentIndexChanged(int)), this, SLOT(on_mode_options_changed(int)));
     this->connect(this->ui->diagnostic_export_folder, SIGNAL(clicked()), this, SLOT(on_export_folder()));
@@ -60,25 +62,38 @@ TabDiagnostics::TabDiagnostics(MainWindow &window, std::shared_ptr<Ui::MainWindo
     this->connect(this->ui->diagnostic_dir_system, SIGNAL(clicked()), this, SLOT(on_diagnostic_dir_system_pressed()));
     this->connect(this->ui->diagnostic_dir_info, SIGNAL(clicked()), this, SLOT(on_diagnostic_dir_info_pressed()));
 
+    this->connect(this->timer_search, &QTimer::timeout, this, &TabDiagnostics::on_timer_search);
+
+    QShortcut *shortcut_override = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Space), this->ui->diagnostic_group_box_loader_log);
+    this->connect(shortcut_override, SIGNAL(activated()), this, SLOT(on_diagnostic_loader_messages_toggled()));
+
     QShortcut *shortcut_search = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_F), this->ui->diagnostic_status_text);
     this->connect(shortcut_search, SIGNAL(activated()), this, SLOT(on_focus_search()));
     QShortcut *shortcut_next = new QShortcut(QKeySequence(Qt::Key_F3), this->ui->diagnostic_status_text);
     this->connect(shortcut_next, SIGNAL(activated()), this, SLOT(on_search_next_pressed()));
     QShortcut *shortcut_prev = new QShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F3), this->ui->diagnostic_status_text);
     this->connect(shortcut_prev, SIGNAL(activated()), this, SLOT(on_search_prev_pressed()));
+    /*
+        QShortcut *shortcut_case = new QShortcut(QKeySequence(Qt::ALT | Qt::Key_C), this->ui->diagnostic_search_case);
+        this->connect(shortcut_case, SIGNAL(activated()), this, SLOT(on_search_case_activated()));
+        QShortcut *shortcut_whole = new QShortcut(QKeySequence(Qt::ALT | Qt::Key_W), this->ui->diagnostic_search_whole);
+        this->connect(shortcut_whole, SIGNAL(activated()), this, SLOT(on_search_whole_activated()));
+        QShortcut *shortcut_regex = new QShortcut(QKeySequence(Qt::ALT | Qt::Key_R), this->ui->diagnostic_search_regex);
+        this->connect(shortcut_regex, SIGNAL(activated()), this, SLOT(on_search_regex_activated()));
+    */
+    this->highlighter = new Highlighter(this->ui->diagnostic_status_text->document());
 
-    QShortcut *shortcut_case = new QShortcut(QKeySequence(Qt::ALT | Qt::Key_C), this->ui->diagnostic_status_text);
-    this->connect(shortcut_case, SIGNAL(activated()), this, SLOT(on_search_case_activated()));
-    QShortcut *shortcut_whole = new QShortcut(QKeySequence(Qt::ALT | Qt::Key_W), this->ui->diagnostic_status_text);
-    this->connect(shortcut_whole, SIGNAL(activated()), this, SLOT(on_search_whole_activated()));
-    QShortcut *shortcut_regex = new QShortcut(QKeySequence(Qt::ALT | Qt::Key_R), this->ui->diagnostic_status_text);
-    this->connect(shortcut_regex, SIGNAL(activated()), this, SLOT(on_search_regex_activated()));
+    this->on_search_clear_pressed();
+
+    this->ui->diagnostic_search_case->setVisible(false);
+    this->ui->diagnostic_search_regex->setVisible(false);
+    this->ui->diagnostic_search_whole->setVisible(false);
 
     this->ui->diagnostic_search_next->setEnabled(false);
     this->ui->diagnostic_search_prev->setEnabled(false);
 
-    this->ui->diagnostic_status_text->installEventFilter(&window);
-    this->ui->diagnostic_status_text->document()->setMaximumBlockCount(65536);
+    // this->ui->diagnostic_status_text->installEventFilter(&window);
+    this->ui->diagnostic_status_text->document()->setMaximumBlockCount(8192);
     this->ui->diagnostic_status_text->setContextMenuPolicy(Qt::CustomContextMenu);
 
     this->UpdateStatus();
@@ -131,8 +146,6 @@ std::string TabDiagnostics::BuildStatus(DiagnosticMode selected_mode, std::size_
             std::string filename;
 
             if (selected_mode == DIAGNOSTIC_VULKAN_LOADER_LOG) {
-                configurator.force_full_loader_log = true;
-
                 this->status.clear();
 
                 args += "--summary";
@@ -168,7 +181,8 @@ std::string TabDiagnostics::BuildStatus(DiagnosticMode selected_mode, std::size_
                 this->log_path = working_directory.AbsolutePath() + "/" + filename;
             }
 
-            configurator.SetExecutableScope(selected_mode == DIAGNOSTIC_VULKAN_PROFILE ? EXECUTABLE_NONE : EXECUTABLE_ANY);
+            // configurator.SetExecutableScope(selected_mode == DIAGNOSTIC_VULKAN_PROFILE ? EXECUTABLE_NONE : EXECUTABLE_ANY);
+            configurator.layers_override_enabled = selected_mode != DIAGNOSTIC_VULKAN_PROFILE;
             configurator.Override(OVERRIDE_AREA_ALL);
 
             this->process->setArguments(args);
@@ -179,16 +193,12 @@ std::string TabDiagnostics::BuildStatus(DiagnosticMode selected_mode, std::size_
             while (this->process->waitForFinished(1000)) {
             }
 
-            if (selected_mode == DIAGNOSTIC_VULKAN_LOADER_LOG) {
-                configurator.force_full_loader_log = false;
-            }
-
             configurator.SetExecutableScope(saved_scope);
             configurator.Override(OVERRIDE_AREA_ALL);
 
             log_status = this->status;
         } break;
-        case DIAGNOSTIC_VULKAN_LOADER_CONFIGURATION: {
+        case DIAGNOSTIC_VULKAN_LAYERS_CONFIGURATION: {
             const Configuration *configuration = nullptr;
 
             Configurator &configurator = Configurator::Get();
@@ -211,7 +221,7 @@ std::string TabDiagnostics::BuildStatus(DiagnosticMode selected_mode, std::size_
                 log_status = file.readAll().toStdString();
                 file.close();
             } else {
-                log_status = "No active loader configuration selected.";
+                log_status = "No active layers configuration selected.";
             }
         } break;
         case DIAGNOSTIC_VULKAN_LAYERS_SETTINGS: {
@@ -226,7 +236,7 @@ std::string TabDiagnostics::BuildStatus(DiagnosticMode selected_mode, std::size_
             if (result) {
                 log_status = file.readAll().toStdString();
             } else {
-                log_status = "No active loader configuration applied.";
+                log_status = "No active layers configuration applied.";
             }
             file.close();
         } break;
@@ -238,7 +248,7 @@ std::string TabDiagnostics::BuildStatus(DiagnosticMode selected_mode, std::size_
             if (result) {
                 log_status = file.readAll().toStdString();
             } else {
-                log_status = "No active loader configuration applied.";
+                log_status = "No active layers configuration applied.";
             }
             file.close();
         } break;
@@ -250,10 +260,13 @@ std::string TabDiagnostics::BuildStatus(DiagnosticMode selected_mode, std::size_
 void TabDiagnostics::UpdateStatus() {
     this->status = this->BuildStatus(this->mode, this->ui->diagnostic_mode_options->currentIndex());
 
-    this->ui->diagnostic_status_text->setText(this->status.c_str());
+    this->ui->diagnostic_status_text->setPlainText(this->status.c_str());
 
     this->ui->diagnostic_search_clear->setEnabled(!this->ui->diagnostic_search_edit->text().isEmpty());
     this->ui->diagnostic_search_edit->setFocus();
+    this->ui->diagnostic_export_file->setEnabled(true);
+
+    this->ResetTextCursor();
 }
 
 void TabDiagnostics::UpdateUI(UpdateUIMode mode) {
@@ -291,26 +304,44 @@ void TabDiagnostics::UpdateUI(UpdateUIMode mode) {
     this->ui->diagnostic_group_box_loader_log->blockSignals(true);
     this->ui->diagnostic_group_box_loader_log->setChecked(configurator.loader_log_enabled);
     this->ui->diagnostic_group_box_loader_log->blockSignals(false);
-    // this->UpdateStatus();
+
+    this->window.UpdateUI_Status();
+
+    this->ResetTextCursor();
+
+    // QColor background_color = palette.color(::GetActualThemeMode(configurator.current_theme_mode) == THEME_MODE_FORCE_LIGHT ?
+    // QPalette::Light : QPalette::Dark);
+    QPalette palette = this->ui->configurations_list->palette();
+    QColor highlight = palette.color(QPalette::AlternateBase);
+    this->highlighter->setColor(highlight);
+    // this->highlighter->setColor(
+    //     ::GetActualThemeMode(configurator.current_theme_mode) == THEME_MODE_FORCE_LIGHT ? highlight.lighter() :
+    //     highlight.darker());
 }
 
 void TabDiagnostics::CleanUI() {}
 
 bool TabDiagnostics::EventFilter(QObject *target, QEvent *event) {
     (void)target;
-
+    /*
     if (event->type() == QEvent::KeyPress) {
         QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
         switch (keyEvent->key()) {
             case Qt::Key_Enter:
             case Qt::Key_Return:
-                this->SearchFind(false);
+                if (this->ui->diagnostic_status_text->hasFocus()) {
+                    this->SearchFind(false);
+                }
                 return false;
         }
         return false;
     }
-
+    */
     return false;
+}
+
+void TabDiagnostics::on_diagnostic_loader_messages_toggled() {
+    this->ui->diagnostic_group_box_loader_log->setChecked(!this->ui->diagnostic_group_box_loader_log->isChecked());
 }
 
 void TabDiagnostics::on_diagnostic_loader_messages_toggled(bool checked) {
@@ -381,11 +412,15 @@ void TabDiagnostics::on_diagnostic_dir_info_pressed() {
 }
 
 void TabDiagnostics::on_refresh_log() {
+    static bool only_once = true;
+
     Configurator &configurator = Configurator::Get();
 
-    if (!(configurator.Get(HIDE_MESSAGE_WARN_NO_LOADER_LOG_ENABLED))) {
+    if (only_once && !(configurator.Get(HIDE_MESSAGE_WARN_NO_LOADER_LOG_ENABLED))) {
         if (this->mode == DIAGNOSTIC_VULKAN_LOADER_LOG &&
             (!configurator.loader_log_enabled || configurator.loader_log_messages_flags == 0)) {
+            only_once = false;  // don't show again during this run
+
             QMessageBox alert;
             alert.setWindowTitle("Vulkan Loader Log is disabled");
             alert.setText("Do you want enable Vulkan Loader log?");
@@ -411,7 +446,7 @@ void TabDiagnostics::on_refresh_log() {
     }
 
     const bool per_executable =
-        (this->mode == DIAGNOSTIC_VULKAN_LOADER_CONFIGURATION || this->mode == DIAGNOSTIC_VULKAN_LAYERS_SETTINGS) &&
+        (this->mode == DIAGNOSTIC_VULKAN_LAYERS_CONFIGURATION || this->mode == DIAGNOSTIC_VULKAN_LAYERS_SETTINGS) &&
         configurator.GetExecutableScope() == EXECUTABLE_PER;
     const bool profile_mode = this->mode == DIAGNOSTIC_VULKAN_PROFILE;
 
@@ -478,7 +513,7 @@ void TabDiagnostics::on_export_folder() {
             case DIAGNOSTIC_VULKAN_PROFILE:
                 options_count = configurator.vulkan_system_info.physicalDevices.size();
                 break;
-            case DIAGNOSTIC_VULKAN_LOADER_CONFIGURATION:
+            case DIAGNOSTIC_VULKAN_LAYERS_CONFIGURATION:
             case DIAGNOSTIC_VULKAN_LAYERS_SETTINGS:
                 if (configurator.GetExecutableScope() == EXECUTABLE_PER) {
                     options_count = configurator.executables.GetExecutables().size();
@@ -507,7 +542,7 @@ void TabDiagnostics::on_export_folder() {
                         export_dir.RelativePath() +
                         format("/%s.json", configurator.vulkan_system_info.physicalDevices[options_index].deviceName.c_str());
                 } break;
-                case DIAGNOSTIC_VULKAN_LOADER_CONFIGURATION:
+                case DIAGNOSTIC_VULKAN_LAYERS_CONFIGURATION:
                 case DIAGNOSTIC_VULKAN_LAYERS_SETTINGS: {
                     if (configurator.GetExecutableScope() == EXECUTABLE_PER) {
                         const std::vector<Executable> &executables = configurator.executables.GetExecutables();
@@ -516,7 +551,7 @@ void TabDiagnostics::on_export_folder() {
                         configuration = configurator.GetActiveConfiguration();
                     }
 
-                    if (current_mode == DIAGNOSTIC_VULKAN_LOADER_CONFIGURATION) {
+                    if (current_mode == DIAGNOSTIC_VULKAN_LAYERS_CONFIGURATION) {
                         export_path = export_dir.RelativePath() + format("/%s.json", configuration->key.c_str());
                     } else {
                         export_path = export_dir.RelativePath() + format("/%s.txt", configuration->key.c_str());
@@ -558,7 +593,7 @@ void TabDiagnostics::on_export_file() {
             export_path = export_path.RelativePath() +
                           format("/%s.json", configurator.vulkan_system_info.physicalDevices[index].deviceName.c_str());
         } break;
-        case DIAGNOSTIC_VULKAN_LOADER_CONFIGURATION:
+        case DIAGNOSTIC_VULKAN_LAYERS_CONFIGURATION:
         case DIAGNOSTIC_VULKAN_LAYERS_SETTINGS: {
             if (configurator.GetExecutableScope() == EXECUTABLE_PER) {
                 int index = this->ui->diagnostic_mode_options->currentIndex();
@@ -568,7 +603,7 @@ void TabDiagnostics::on_export_file() {
                 configuration = configurator.GetActiveConfiguration();
             }
 
-            if (this->mode == DIAGNOSTIC_VULKAN_LOADER_CONFIGURATION) {
+            if (this->mode == DIAGNOSTIC_VULKAN_LAYERS_CONFIGURATION) {
                 export_path = export_path.RelativePath() + format("/%s.json", configuration->key.c_str());
             } else {
                 export_path = export_path.RelativePath() + format("/%s.txt", configuration->key.c_str());
@@ -600,27 +635,89 @@ void TabDiagnostics::on_export_file() {
     }
 }
 
-void TabDiagnostics::on_focus_search() { this->ui->diagnostic_search_edit->setFocus(); }
+void TabDiagnostics::on_focus_search() {
+    this->ui->diagnostic_search_edit->setFocus();
+    // this->ui->diagnostic_status_text->moveCursor(QTextCursor::Start);
+}
+
+void TabDiagnostics::on_timer_search() {
+    this->timer_search->stop();
+
+    this->ResetTextCursor();
+
+    if (!this->diagnostic_search_text.empty()) {
+        this->highlighter->setSearch(this->diagnostic_search_text.c_str());
+
+        this->ui->diagnostic_status_text->moveCursor(QTextCursor::StartOfWord);
+        this->SearchFind(false);
+        this->text_is_reset = false;
+    }
+}
 
 void TabDiagnostics::on_search_textEdited(const QString &text) {
-    this->ui->diagnostic_search_next->setEnabled(!this->ui->diagnostic_search_edit->text().isEmpty());
-    this->ui->diagnostic_search_prev->setEnabled(!this->ui->diagnostic_search_edit->text().isEmpty());
+    this->timer_search->start(200);
 
     this->diagnostic_search_text = text.toStdString();
+
+    this->ui->diagnostic_search_next->setEnabled(!this->ui->diagnostic_search_edit->text().isEmpty());
+    this->ui->diagnostic_search_prev->setEnabled(!this->ui->diagnostic_search_edit->text().isEmpty());
     this->ui->diagnostic_search_clear->setEnabled(!text.isEmpty());
 }
 
-void TabDiagnostics::on_search_clear_pressed() {
-    this->diagnostic_search_text.clear();
-    this->ui->diagnostic_search_edit->clear();
-    this->ui->diagnostic_search_clear->setEnabled(false);
+void TabDiagnostics::ResetTextCursor() {
+    if (this->ui->diagnostic_status_text->document()->isEmpty()) {
+        return;
+    }
+
+    if (this->text_is_reset) {
+        return;
+    }
+
+    QTextCursor cursor = this->ui->diagnostic_status_text->textCursor();
+    int saved_anchor = cursor.anchor();
+    int saved_Position = cursor.position();
+
+    cursor.setPosition(0, QTextCursor::MoveAnchor);
+    cursor.movePosition(QTextCursor::End, QTextCursor::KeepAnchor);
+
+    QTextCharFormat format;
+    cursor.setCharFormat(format);
+
+    cursor.setPosition(saved_Position, QTextCursor::MoveAnchor);
+    cursor.setPosition(saved_anchor, QTextCursor::KeepAnchor);
+
+    this->text_is_reset = true;
 }
 
-void TabDiagnostics::on_search_next_pressed() { this->SearchFind(false); }
+void TabDiagnostics::on_search_clear_pressed() {
+    this->highlighter->setSearch("");
 
-void TabDiagnostics::on_search_prev_pressed() { this->SearchFind(true); }
+    this->diagnostic_search_text.clear();
+    this->ui->diagnostic_search_edit->clear();
+    this->ui->diagnostic_search_next->setEnabled(false);
+    this->ui->diagnostic_search_prev->setEnabled(false);
+    this->ui->diagnostic_search_clear->setEnabled(false);
+
+    this->ResetTextCursor();
+}
+
+void TabDiagnostics::on_search_next_pressed() {
+    QTextCursor cursor = this->ui->diagnostic_status_text->textCursor();
+    this->ui->diagnostic_status_text->moveCursor(QTextCursor::EndOfWord);
+    this->ui->diagnostic_status_text->setTextCursor(cursor);
+    this->SearchFind(false);
+}
+
+void TabDiagnostics::on_search_prev_pressed() {
+    QTextCursor cursor = this->ui->diagnostic_status_text->textCursor();
+    this->ui->diagnostic_status_text->moveCursor(QTextCursor::StartOfWord);
+    this->ui->diagnostic_status_text->setTextCursor(cursor);
+    this->SearchFind(true);
+}
 
 void TabDiagnostics::SearchFind(bool prev) {
+    this->ResetTextCursor();
+
     QTextDocument::FindFlags flags = prev ? QTextDocument::FindBackward : QTextDocument::FindFlags(0);
 
     if (this->search_case) {
@@ -630,12 +727,33 @@ void TabDiagnostics::SearchFind(bool prev) {
         flags |= QTextDocument::FindWholeWords;
     }
 
-    this->ui->diagnostic_status_text->setFocus();
-
+    bool found = false;
     if (this->search_regex) {
-        this->ui->diagnostic_status_text->find(QRegularExpression(this->ui->diagnostic_search_edit->text()), flags);
+        found = this->ui->diagnostic_status_text->find(QRegularExpression(this->ui->diagnostic_search_edit->text()), flags);
     } else {
-        this->ui->diagnostic_status_text->find(this->ui->diagnostic_search_edit->text(), flags);
+        found = this->ui->diagnostic_status_text->find(this->ui->diagnostic_search_edit->text(), flags);
+    }
+
+    QTextCursor cursor = this->ui->diagnostic_status_text->textCursor();
+
+    if (found) {
+        QTextCharFormat format;
+        format.setFontWeight(QFont::Bold);
+        cursor.mergeCharFormat(format);
+
+        this->ui->diagnostic_status_text->ensureCursorVisible();
+    } else {
+        if (!prev && !cursor.atStart()) {
+            this->ui->diagnostic_status_text->moveCursor(QTextCursor::Start);
+            this->SearchFind(prev);
+            return;
+        }
+
+        if (prev && !cursor.atEnd()) {
+            this->ui->diagnostic_status_text->moveCursor(QTextCursor::End);
+            this->SearchFind(prev);
+            return;
+        }
     }
 }
 
@@ -643,21 +761,21 @@ void TabDiagnostics::on_search_case_activated() { this->ui->diagnostic_search_ca
 
 void TabDiagnostics::on_search_case_toggled(bool checked) {
     this->search_case = checked;
-    this->ui->diagnostic_status_text->setFocus();
+    this->highlighter->setCase(checked);
 }
 
 void TabDiagnostics::on_search_whole_activated() { this->ui->diagnostic_search_whole->setChecked(!this->search_whole); }
 
 void TabDiagnostics::on_search_whole_toggled(bool checked) {
     this->search_whole = checked;
-    this->ui->diagnostic_status_text->setFocus();
+    this->highlighter->setWhole(checked);
 }
 
 void TabDiagnostics::on_search_regex_activated() { this->ui->diagnostic_search_regex->setChecked(!this->search_regex); }
 
 void TabDiagnostics::on_search_regex_toggled(bool checked) {
     this->search_regex = checked;
-    this->ui->diagnostic_status_text->setFocus();
+    this->highlighter->setRegex(checked);
 }
 
 void TabDiagnostics::on_context_menu(const QPoint &pos) {
@@ -671,7 +789,7 @@ void TabDiagnostics::on_context_menu(const QPoint &pos) {
     menu->addSeparator();
 
     QAction *action_search = new QAction("Search...", nullptr);
-    action_search->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_F));
+    // action_search->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_F));
     action_search->setEnabled(true);
     menu->addAction(action_search);
 
@@ -686,6 +804,12 @@ void TabDiagnostics::on_context_menu(const QPoint &pos) {
             this->ui->diagnostic_status_text->clear();
         }
     } else if (action == action_search) {
+        QTextCursor cursor = this->ui->diagnostic_status_text->textCursor();
+        if (cursor.hasSelection()) {
+            QString text = cursor.selectedText();
+            this->ui->diagnostic_search_edit->setText(text);
+            this->on_search_textEdited(text);
+        }
         this->on_focus_search();
     }
 
@@ -707,7 +831,7 @@ void TabDiagnostics::processClosed(int exit_code, QProcess::ExitStatus status) {
         }
     }
 
-    this->ui->diagnostic_status_text->setText(this->status.c_str());
+    this->ui->diagnostic_status_text->setPlainText(this->status.c_str());
 
     if (this->process->processId() > 0) {
         this->process->kill();

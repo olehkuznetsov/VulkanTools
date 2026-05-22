@@ -40,10 +40,12 @@ class TabPreferences : public Tab {
     void on_keep_running_toggled(bool checked);
     void on_vk_home_text_pressed();
     void on_vk_home_browse_pressed();
+    void on_show_executables_scope_toggled(bool checked);
     void on_all_enabled_executables_changed(int index);
     void on_vk_download_browse_pressed();
     void on_vk_download_open_pressed();
     void on_reset_hard_pressed();
+    void on_layer_validate_toggled(bool checked);
     void on_layer_debug_mode_toggled(bool checked);
     void on_open_page_pressed();
     void on_download_pressed();
@@ -56,8 +58,11 @@ class TabPreferences : public Tab {
     void on_theme_dark_alternate_enabled(bool checked);
     void on_theme_light_alternate_pressed();
     void on_theme_dark_alternate_pressed();
+    void on_app_text_max_blocks_changed(int index);
 
    private:
+    void UpdatePreferences(ThemeMode new_theme_mode);
+
     QNetworkAccessManager network_manager;
     QByteArray downloaded_data;
     bool initialized = false;

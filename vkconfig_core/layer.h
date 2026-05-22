@@ -36,27 +36,10 @@
 #include <vector>
 #include <string>
 
-struct LayerStatus {
-    std::string last_modified;
-    bool validated = false;
-    bool disabled = false;
-};
-
-struct LayersPathInfo {
-    Path path;
-    LayerType type = LAYER_TYPE_EXPLICIT;
-    bool enabled = true;
-};
-
-bool operator<(const LayersPathInfo& a, const LayersPathInfo& b);
-
-bool Found(const std::vector<LayersPathInfo>& data, const Path& path);
-
 enum LayerLoadStatus {
     LAYER_LOAD_ADDED = 0,
     LAYER_LOAD_RELOADED,
     LAYER_LOAD_UNMODIFIED,
-    LAYER_LOAD_FAILED,
     LAYER_LOAD_INVALID,
     LAYER_LOAD_IGNORED,
 
@@ -64,11 +47,36 @@ enum LayerLoadStatus {
     LAYER_LOAD_LAST = LAYER_LOAD_IGNORED,
 };
 
-inline bool IsDisabled(LayerLoadStatus status) {
-    return status == LAYER_LOAD_FAILED || status == LAYER_LOAD_INVALID || status == LAYER_LOAD_IGNORED;
-}
-
 enum { LAYER_LOAD_COUNT = LAYER_LOAD_LAST - LAYER_LOAD_FIRST + 1 };
+
+enum LayerValidated {
+    LAYER_VALIDATE_NONE = 0,
+    LAYER_VALIDATE_PASS,
+    LAYER_VALIDATE_FAIL,
+
+    LAYER_VALIDATE_FIRST = LAYER_VALIDATE_NONE,
+    LAYER_VALIDATE_LAST = LAYER_VALIDATE_FAIL,
+};
+
+enum { LAYER_VALIDATE_COUNT = LAYER_VALIDATE_LAST - LAYER_VALIDATE_FIRST + 1 };
+
+const char* GetToken(LayerValidated status);
+
+LayerValidated GetLayerValidated(const char* token);
+
+struct LayerId {
+    Path manifest_path;
+    std::string key;
+    Version api_version;
+};
+
+struct LayerDescriptor {
+    std::string last_modified;
+    LayerValidated validated = LAYER_VALIDATE_NONE;
+    bool enabled = true;
+    bool removed = false;
+    bool recent = false;
+};
 
 class Layer {
    public:
@@ -76,13 +84,12 @@ class Layer {
 
     Layer();
     Layer(const std::string& key);
-    Layer(const std::string& key, const Version& file_format_version, const Version& api_version,
-          const std::string& implementation_version, const std::string& library_path);
+
+    LayerId GetId() const;
 
     bool IsValid() const;
 
     LayerControl GetActualControl() const;
-    std::string GetActualControlTooltip() const;
 
     int FindPresetIndex(const SettingDataSet& settings) const;
 
@@ -103,7 +110,7 @@ class Layer {
     Path binary_path;
     Version api_version;
     std::string implementation_version;
-    std::string last_modified;
+    // std::string last_modified;
     StatusType status;
     std::string description;
     std::string introduction;
@@ -116,18 +123,20 @@ class Layer {
     std::string enable_env;
     std::string enable_value;
     bool is_32bits = false;
-    bool enabled = true;
 
     std::vector<SettingMeta*> settings;
     std::vector<LayerPreset> presets;
 
-    LayerLoadStatus Load(const Path& full_path_to_file, LayerType type, bool request_validate_manifest,
-                         const std::map<Path, LayerStatus>& layers_found, ConfiguratorMode configurator_mode);
+    LayerLoadStatus Load(const QJsonObject& json_layer_object);
+
+    LayerDescriptor descriptor;
 
    private:
     Layer& operator=(const Layer&) = delete;
 
     std::vector<std::shared_ptr<SettingMeta> > memory;  // Settings are deleted when all layers instances are deleted.
 };
+
+bool operator<(const Layer& layer_a, const Layer& layer_b);
 
 void CollectDefaultSettingData(const SettingMetaSet& meta_set, SettingDataSet& data_set);

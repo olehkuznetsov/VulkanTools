@@ -20,13 +20,12 @@
 
 #include "../layer.h"
 #include "../layer_preset.h"
+#include "../layer_manager.h"
 #include "../setting_string.h"
 #include "../setting_int.h"
 #include "../util.h"
 
 #include <gtest/gtest.h>
-
-static std::map<Path, LayerStatus> Dummy() { return std::map<Path, LayerStatus>(); }
 
 static SettingMetaString* InstantiateString(Layer& layer, const std::string& key) {
     return static_cast<SettingMetaString*>(layer.Instantiate(layer.settings, key, SETTING_STRING));
@@ -66,10 +65,13 @@ TEST(test_layer_preset, has_preset) {
 }
 
 TEST(test_layer_preset, find_preset_index_no_preset) {
-    Layer layer;
+    LayerManager layer_manager;
+
     const LayerLoadStatus load_loaded =
-        layer.Load(":/layers/VK_LAYER_LUNARG_test_03.json", LAYER_TYPE_EXPLICIT, false, Dummy(), CONFIGURATOR_MODE_CMD);
+        layer_manager.LoadLayers(":/layers/VK_LAYER_LUNARG_test_03.json", LAYER_TYPE_EXPLICIT, CONFIGURATOR_MODE_CMD);
     EXPECT_EQ(load_loaded, LAYER_LOAD_ADDED);
+
+    Layer& layer = layer_manager.available_layers[0];
 
     SettingDataSet layer_settings;
     ::CollectDefaultSettingData(layer.settings, layer_settings);
@@ -79,10 +81,13 @@ TEST(test_layer_preset, find_preset_index_no_preset) {
 }
 
 TEST(test_layer_preset, find_preset_index_empty) {
-    Layer layer;
+    LayerManager layer_manager;
+
     const LayerLoadStatus load_loaded =
-        layer.Load(":/layers/VK_LAYER_LUNARG_test_04.json", LAYER_TYPE_EXPLICIT, false, Dummy(), CONFIGURATOR_MODE_CMD);
+        layer_manager.LoadLayers(":/layers/VK_LAYER_LUNARG_test_04.json", LAYER_TYPE_EXPLICIT, CONFIGURATOR_MODE_CMD);
     EXPECT_EQ(load_loaded, LAYER_LOAD_ADDED);
+
+    Layer& layer = layer_manager.available_layers[0];
 
     SettingDataSet layer_settings;
     int index = layer.FindPresetIndex(layer_settings);
@@ -90,10 +95,13 @@ TEST(test_layer_preset, find_preset_index_empty) {
 }
 
 TEST(test_layer_preset, find_preset_index_found) {
-    Layer layer;
+    LayerManager layer_manager;
+
     const LayerLoadStatus load_loaded =
-        layer.Load(":/layers/VK_LAYER_LUNARG_test_04.json", LAYER_TYPE_EXPLICIT, false, Dummy(), CONFIGURATOR_MODE_CMD);
+        layer_manager.LoadLayers(":/layers/VK_LAYER_LUNARG_test_04.json", LAYER_TYPE_EXPLICIT, CONFIGURATOR_MODE_CMD);
     EXPECT_EQ(load_loaded, LAYER_LOAD_ADDED);
+
+    Layer& layer = layer_manager.available_layers[0];
 
     SettingDataSet layer_settings;
     ::CollectDefaultSettingData(layer.settings, layer_settings);
@@ -116,10 +124,13 @@ TEST(test_layer_preset, find_preset_index_found) {
 }
 
 TEST(test_layer_preset, find_preset_index_missing_value) {
-    Layer layer;
+    LayerManager layer_manager;
+
     const LayerLoadStatus load_loaded =
-        layer.Load(":/layers/VK_LAYER_LUNARG_test_07.json", LAYER_TYPE_EXPLICIT, false, Dummy(), CONFIGURATOR_MODE_CMD);
+        layer_manager.LoadLayers(":/layers/VK_LAYER_LUNARG_test_07.json", LAYER_TYPE_EXPLICIT, CONFIGURATOR_MODE_CMD);
     EXPECT_EQ(load_loaded, LAYER_LOAD_ADDED);
+
+    Layer& layer = layer_manager.available_layers[0];
 
     SettingDataSet layer_settings;
     ::CollectDefaultSettingData(layer.settings, layer_settings);

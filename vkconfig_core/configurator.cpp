@@ -132,7 +132,8 @@ bool Configurator::Init(ConfiguratorMode configurator_mode) {
     this->has_crashed = true;  // This is set to `false` when saving on exit.
     this->Save();
 
-    if (::RequireLoading(this->mode)) {
+    // if (::RequireLoading(this->mode)) {
+    if (this->mode == CONFIGURATOR_MODE_GUI) {
         this->UpdateVulkanSystemInfo();
     }
 
@@ -196,7 +197,7 @@ QJsonObject Configurator::CreateJsonSettingObject(const Configurator::LoaderSett
         json_settings.insert("app_keys", json_app_keys);
     }
 
-    if (loader_settings.override_layers) {
+    if (this->layers_override_enabled || this->mode == CONFIGURATOR_MODE_CMD) {
         json_settings.insert("layers", json_layers);
     }
 
@@ -244,6 +245,14 @@ QJsonObject Configurator::CreateJsonSettingObject(const Configurator::LoaderSett
                 }
                 json_settings.insert("device_configurations", json_devices);
             } break;
+            case DRIVER_MODE_NONE: {
+                QJsonArray json_devices;
+                json_settings.insert("device_configurations", json_devices);
+            } break;
+            default: {
+                assert(0);
+                break;
+            }
         }
     }
 
@@ -316,6 +325,13 @@ QJsonObject Configurator::CreateJsonGlobalObject() const {
                 }
                 json_settings.insert("device_configurations", json_devices);
             } break;
+            case DRIVER_MODE_NONE: {
+                QJsonArray json_devices;
+                json_settings.insert("device_configurations", json_devices);
+            } break;
+            default: {
+                assert(0);
+            }
         }
     }
 
@@ -442,7 +458,7 @@ bool Configurator::WriteLoaderSettings(OverrideArea override_area, const Path& l
                 break;
             }
             default:
-            case EXECUTABLE_NONE:
+                assert(0);
                 break;
         }
 
@@ -526,7 +542,9 @@ bool Configurator::Surrender(OverrideArea override_area) {
             result_layers_settings = global_removed;
         }
 
-        if (::EnabledExecutables(this->executable_scope)) {
+        if (this->GetExecutableScope() == EXECUTABLE_PER ||
+            (this->GetExecutableScope() == EXECUTABLE_ALL &&
+             this->GetAllEnabledExecutableBehavior() == EXECUTABLE_ALL_ENABLED_WORKING_DIR)) {
             const std::vector<Executable>& executables = this->executables.GetExecutables();
             for (std::size_t i = 0, n = executables.size(); i < n; ++i) {
                 Path path(executables[i].GetActiveOptions()->working_folder.RelativePath() + "/vk_layer_settings.txt");
@@ -557,6 +575,7 @@ void Configurator::Reset(bool hard) {
     this->Surrender(OVERRIDE_AREA_LOADER_SETTINGS_BIT);
 
     const Path& vkconfig_init_path = ::Path(Path::INIT);
+    vkconfig_init_path.Backup();
     vkconfig_init_path.Remove();
 
     QSettings settings("LunarG", VKCONFIG_SHORT_NAME);
@@ -841,9 +860,9 @@ std::string Configurator::Log() const {
     if (this->GetExecutableScope() == EXECUTABLE_ANY || this->GetExecutableScope() == EXECUTABLE_ALL) {
         const Configuration* configuration = this->GetActiveConfiguration();
         if (configuration != nullptr) {
-            log += format(" - Active Vulkan Loader Configuration: '%s'\n", configuration->key.c_str());
+            log += format(" - Active Vulkan Layers Configuration: '%s'\n", configuration->key.c_str());
         } else {
-            log += " - No Active Vulkan Loader Configuration\n";
+            log += " - No Active Vulkan Layers Configuration\n";
         }
     }
     /*
@@ -1089,15 +1108,65 @@ bool Configurator::Load() {
         // TAB_CONFIGURATIONS
         if (json_interface_object.value(GetToken(TAB_CONFIGURATIONS)) != QJsonValue::Undefined) {
             const QJsonObject& json_object = json_interface_object.value(GetToken(TAB_CONFIGURATIONS)).toObject();
-            this->advanced = json_object.value("advanced").toBool();
+            if (json_object.value("override_layers") != QJsonValue::Undefined) {
+                this->layers_override_enabled = json_object.value("override_layers").toBool();
+            }
+            if (json_object.value("layers_display_mode") != QJsonValue::Undefined) {
+                this->layers_display_mode =
+                    ::GetLayersDisplayMode(json_object.value("layers_display_mode").toString().toStdString().c_str());
+            }
             this->executable_scope = ::GetExecutableScope(json_object.value("executable_scope").toString().toStdString().c_str());
             this->selected_global_configuration = json_object.value("selected_global_configuration").toString().toStdString();
         }
 
-        // TAB_LAYERS
-        if (json_interface_object.value(GetToken(TAB_LAYERS)) != QJsonValue::Undefined) {
-            const QJsonObject& json_object = json_interface_object.value(GetToken(TAB_LAYERS)).toObject();
-            (void)json_object;
+        // TAB_LAYERS_PATHS
+        if (json_interface_object.value(GetToken(TAB_LAYERS_PATHS)) != QJsonValue::Undefined) {
+            const QJsonObject& json_object = json_interface_object.value(GetToken(TAB_LAYERS_PATHS)).toObject();
+            if (json_object.value("last_driver_dir") != QJsonValue::Undefined) {
+                this->layers.last_layers_dir = json_object.value("last_driver_dir").toString().toStdString();
+            }
+            if (json_object.value("validate_manifests") != QJsonValue::Undefined) {
+                this->layers.validate_manifests = json_object.value("validate_manifests").toBool();
+            }
+            if (json_object.value("layers") != QJsonValue::Undefined) {
+                const QJsonObject& json_object_paths = json_object.value("layers").toObject();
+                QStringList keys = json_object_paths.keys();
+                for (std::size_t i = 0, n = keys.size(); i < n; ++i) {
+                    const QJsonArray& json_descriptors = json_object_paths.value(keys[i]).toArray();
+
+                    std::vector<LayerDisplay> descriptors;
+                    for (std::size_t j = 0, o = json_descriptors.size(); j < o; ++j) {
+                        const QJsonObject& json_descriptor_object = json_descriptors[j].toObject();
+
+                        LayerDisplay display;
+                        display.id.key = json_descriptor_object.value("key").toString().toStdString();
+                        display.id.manifest_path = keys[i].toStdString();
+                        display.id.api_version = Version::NONE;
+                        display.descriptor.enabled = json_descriptor_object.value("enabled").toBool();
+                        display.descriptor.removed = json_descriptor_object.value("removed").toBool();
+                        display.descriptor.validated =
+                            ::GetLayerValidated(json_descriptor_object.value("validated").toString().toStdString().c_str());
+                        if (json_descriptor_object.value("last_modified") != QJsonValue::Undefined) {
+                            display.descriptor.last_modified =
+                                json_descriptor_object.value("last_modified").toString().toStdString();
+                        }
+                        descriptors.push_back(display);
+                    }
+
+                    Path path(keys[i].toStdString());
+                    if (!path.Exists()) {
+                        continue;
+                    }
+
+                    this->layers.AppendInit(path, descriptors);
+                }
+            }
+            if (json_object.value("paths") != QJsonValue::Undefined) {
+                const QJsonArray& json_paths = json_object.value("paths").toArray();
+                for (std::size_t i = 0, n = json_paths.size(); i < n; ++i) {
+                    this->layers.gui_added_layers_paths.insert(json_paths[i].toString().toStdString());
+                }
+            }
         }
 
         // TAB_DRIVERS
@@ -1141,8 +1210,8 @@ bool Configurator::Load() {
                 }
             }
 
-            if (json_object.value("last_driver_path") != QJsonValue::Undefined) {
-                this->last_driver_path = json_object.value("last_driver_path").toString().toStdString();
+            if (json_object.value("last_driver_dir") != QJsonValue::Undefined) {
+                this->last_driver_dir = json_object.value("last_driver_dir").toString().toStdString();
             }
             if (json_object.value("driver_paths") != QJsonValue::Undefined) {
                 const QJsonObject& json_object_paths = json_object.value("driver_paths").toObject();
@@ -1180,6 +1249,10 @@ bool Configurator::Load() {
         if (json_interface_object.value(GetToken(TAB_PREFERENCES)) != QJsonValue::Undefined) {
             const QJsonObject& json_object = json_interface_object.value(GetToken(TAB_PREFERENCES)).toObject();
 
+            if (json_object.value("validate_manifests") != QJsonValue::Undefined) {
+                this->layers.validate_manifests = json_object.value("validate_manifests").toBool();
+            }
+
             if (json_object.value("use_notify_releases") != QJsonValue::Undefined) {
                 this->use_notify_releases = json_object.value("use_notify_releases").toBool();
             }
@@ -1208,6 +1281,10 @@ bool Configurator::Load() {
                 this->theme_dark_alternate_color = json_object.value("theme_dark_alternate_color").toString();
             }
 
+            if (json_object.value("app_log_max_blocks") != QJsonValue::Undefined) {
+                this->app_log_max_blocks = json_object.value("app_log_max_blocks").toInteger();
+            }
+
             if (json_object.value("latest_sdk_version") != QJsonValue::Undefined) {
                 this->latest_sdk_version = Version(json_object.value("latest_sdk_version").toString().toStdString().c_str());
             }
@@ -1224,10 +1301,17 @@ bool Configurator::Load() {
                 ::SetHomePath(json_object.value("VULKAN_HOME").toString().toStdString());
             }
 
+            if (json_object.value("layers_show_scope") != QJsonValue::Undefined) {
+                this->configuration_show_scope = json_object.value("layers_show_scope").toBool();
+            } else {
+                this->configuration_show_scope = this->executable_scope != EXECUTABLE_ANY;
+            }
+
             if (json_object.value("all_enabled_executables_behavior") != QJsonValue::Undefined) {
                 this->executable_behavior = ::GetExecutableAllEnabledBehavior(
                     json_object.value("all_enabled_executables_behavior").toString().toStdString().c_str());
             }
+
             if (json_object.value("VULKAN_DOWNLOAD") != QJsonValue::Undefined) {
                 ::SetDownloadPath(json_object.value("VULKAN_DOWNLOAD").toString().toStdString());
             }
@@ -1277,16 +1361,62 @@ bool Configurator::Save() const {
     // TAB_CONFIGURATIONS
     {
         QJsonObject json_object;
-        json_object.insert("advanced", this->advanced);
+        json_object.insert("override_layers", this->layers_override_enabled);
+        json_object.insert("layers_display_mode", ::GetToken(this->layers_display_mode));
         json_object.insert("executable_scope", ::GetToken(this->executable_scope));
         json_object.insert("selected_global_configuration", this->selected_global_configuration.c_str());
         json_interface_object.insert(::GetToken(TAB_CONFIGURATIONS), json_object);
     }
 
-    // TAB_LAYERS
+    // TAB_LAYERS_PATHS
     {
+        std::map<Path, std::map<std::string, LayerDisplay>> data = this->layers.BuildLayerStoreList();
+
+        QJsonObject json_layers;
+        for (auto it = data.begin(); it != data.end(); ++it) {
+            std::map<std::string, LayerDisplay> descriptors = it->second;
+
+            QJsonArray json_layer_descriptors;
+
+            bool is_user_added_path =
+                this->layers.gui_added_layers_paths.find(it->first.AbsoluteDir()) != this->layers.gui_added_layers_paths.end();
+
+            bool keep = false;  // Only remember paths that don't have all layer removed
+
+            for (auto jt = it->second.begin(); jt != it->second.end(); ++jt) {
+                if (!jt->second.descriptor.removed) {
+                    keep = true;
+                }
+
+                QJsonObject json_descriptor;
+                json_descriptor.insert("key", jt->first.c_str());
+                json_descriptor.insert("validated", ::GetToken(jt->second.descriptor.validated));
+                json_descriptor.insert("enabled", jt->second.descriptor.enabled);
+                json_descriptor.insert("removed", jt->second.descriptor.removed);
+                json_descriptor.insert("last_modified", jt->second.descriptor.last_modified.c_str());
+                json_layer_descriptors.append(json_descriptor);
+            }
+
+            if (is_user_added_path) {
+                if (keep) {
+                    json_layers.insert(it->first.AbsolutePath().c_str(), json_layer_descriptors);
+                }
+            } else {
+                json_layers.insert(it->first.AbsolutePath().c_str(), json_layer_descriptors);
+            }
+        }
+
+        QJsonArray json_paths;
+        for (auto it = this->layers.gui_added_layers_paths.begin(); it != this->layers.gui_added_layers_paths.end(); ++it) {
+            json_paths.append(it->AbsolutePath().c_str());
+        }
+
         QJsonObject json_object;
-        json_interface_object.insert(GetToken(TAB_LAYERS), json_object);
+        json_object.insert("paths", json_paths);
+        json_object.insert("layers", json_layers);
+        json_object.insert("validate_manifests", this->layers.validate_manifests);
+        json_object.insert("last_driver_dir", this->layers.last_layers_dir.AbsolutePath().c_str());
+        json_interface_object.insert(::GetToken(TAB_LAYERS_PATHS), json_object);
     }
 
     // TAB_DRIVER
@@ -1325,7 +1455,7 @@ bool Configurator::Save() const {
         }
         json_object.insert("driver_override_list", json_driver_override_list_array);
 
-        json_object.insert("last_driver_path", this->last_driver_path.RelativePath().c_str());
+        json_object.insert("last_driver_dir", this->last_driver_dir.RelativePath().c_str());
         QJsonObject json_object_paths;
         for (auto it = this->driver_paths.begin(); it != this->driver_paths.end(); ++it) {
             QJsonObject json_object_path;
@@ -1342,6 +1472,7 @@ bool Configurator::Save() const {
     // TAB_APPLICATIONS
     {
         QJsonObject json_object;
+        json_object.insert("stdout_display", ::GetToken(this->stdout_display));
         json_interface_object.insert(GetToken(TAB_APPLICATIONS), json_object);
     }
 
@@ -1363,11 +1494,13 @@ bool Configurator::Save() const {
         json_object.insert("theme_dark_alternate_enabled", this->theme_dark_alternate_enabled);
         json_object.insert("theme_light_alternate_color", this->theme_light_alternate_color.name());
         json_object.insert("theme_dark_alternate_color", this->theme_dark_alternate_color.name());
+        json_object.insert("app_log_max_blocks", this->app_log_max_blocks);
         json_object.insert("use_notify_releases", this->use_notify_releases);
         json_object.insert("latest_sdk_version", this->latest_sdk_version.str().c_str());
         json_object.insert("show_external_layers_settings", this->show_external_layers_settings);
         json_object.insert("VULKAN_HOME", ::Path(Path::HOME).RelativePath().c_str());
         json_object.insert("VULKAN_DOWNLOAD", ::Path(Path::DOWNLOAD).RelativePath().c_str());
+        json_object.insert("layers_show_scope", this->configuration_show_scope);
         json_object.insert("all_enabled_executables_behavior", ::GetToken(this->executable_behavior));
 
         json_interface_object.insert(GetToken(TAB_PREFERENCES), json_object);
@@ -1449,9 +1582,13 @@ bool Configurator::ShouldNotify() const {
 }
 
 bool Configurator::HasActiveSettings() const {
+    if (!this->layers_override_enabled) {
+        return false;
+    }
+
     switch (this->executable_scope) {
         default:
-        case EXECUTABLE_NONE:
+            assert(0);
             return false;
         case EXECUTABLE_ALL:
         case EXECUTABLE_PER:
@@ -1483,18 +1620,20 @@ bool Configurator::HasActiveSettings() const {
 }
 
 bool Configurator::HasEnabledUI(EnabledUI enabled_ui) const {
+    if (!this->layers_override_enabled) {
+        return false;
+    }
+
     switch (enabled_ui) {
         default:
             assert(false);
             return false;
         case ENABLE_UI_CONFIG: {
             switch (this->GetExecutableScope()) {
-                default:
-                case EXECUTABLE_NONE:
-                    return false;
                 case EXECUTABLE_ALL:
                 case EXECUTABLE_PER:
                     return this->executables.GetActiveExecutable() != nullptr;
+                default:
                 case EXECUTABLE_ANY:
                     return true;
             }

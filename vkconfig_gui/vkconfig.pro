@@ -74,6 +74,7 @@ SOURCES += \
     ../vkconfig_core/type_layer_builtin.cpp \
     ../vkconfig_core/type_layer_control.cpp \
     ../vkconfig_core/type_layer_type.cpp \
+    ../vkconfig_core/type_layers_display_mode.cpp \
     ../vkconfig_core/type_layers_paths.cpp \
     ../vkconfig_core/type_log.cpp \
     ../vkconfig_core/type_platform.cpp \
@@ -81,6 +82,7 @@ SOURCES += \
     ../vkconfig_core/type_status.cpp \
     ../vkconfig_core/type_tab.cpp \
     ../vkconfig_core/type_override_area.cpp \
+    ../vkconfig_core/type_stdout_display.cpp \
     ../vkconfig_core/type_theme_mode.cpp \
     ../vkconfig_core/type_action.cpp \
     ../vkconfig_core/type_action_operator.cpp \
@@ -91,6 +93,7 @@ SOURCES += \
     ../vkconfig_core/version.cpp \
     ../vkconfig_core/vulkan_util.cpp \
     widget_resize_button.cpp \
+    widget_resize_combobox.cpp \
     widget_layer_version.cpp \
     widget_tab_configurations_layer.cpp \
     widget_tab_layers_path.cpp \
@@ -107,6 +110,7 @@ SOURCES += \
     widget_setting_string.cpp \
     widget_setting_list_element.cpp \
     widget_setting_list.cpp \
+    highlighter.cpp \
     item_tree.cpp \
     item_list.cpp \
     item_list_device.cpp \
@@ -173,6 +177,7 @@ HEADERS += \
     ../vkconfig_core/type_layer_builtin.h \
     ../vkconfig_core/type_layer_control.h \
     ../vkconfig_core/type_layer_type.h \
+    ../vkconfig_core/type_layers_display_mode.h \
     ../vkconfig_core/type_layers_paths.h \
     ../vkconfig_core/type_log.h \
     ../vkconfig_core/type_platform.h \
@@ -180,6 +185,7 @@ HEADERS += \
     ../vkconfig_core/type_status.h \
     ../vkconfig_core/type_tab.h \
     ../vkconfig_core/type_override_area.h \
+    ../vkconfig_core/type_stdout_display.h \
     ../vkconfig_core/type_theme_mode.h \
     ../vkconfig_core/type_action.h \
     ../vkconfig_core/type_action_operator.h \
@@ -190,6 +196,7 @@ HEADERS += \
     ../vkconfig_core/version.h \
     ../vkconfig_core/vulkan_util.h \
     widget_resize_button.h \
+    widget_resize_combobox.h \
     widget_layer_version.h \
     widget_tab_configurations_layer.h \
     widget_tab_layers_path.h \
@@ -206,6 +213,7 @@ HEADERS += \
     widget_setting_string.h \
     widget_setting_list_element.h \
     widget_setting_list.h \
+    highlighter.h \
     item_tree.h \
     item_list.h \
     item_list_device.h \

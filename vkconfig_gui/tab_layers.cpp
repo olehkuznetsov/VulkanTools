@@ -28,23 +28,37 @@
 
 #include <QFileDialog>
 #include <QMessageBox>
+#include <QCheckBox>
+#include <QShortcut>
 
 #include <chrono>
 #include <thread>
 
-TabLayers::TabLayers(MainWindow &window, std::shared_ptr<Ui::MainWindow> ui) : Tab(TAB_LAYERS, window, ui) {
+TabLayers::TabLayers(MainWindow &window, std::shared_ptr<Ui::MainWindow> ui) : Tab(TAB_LAYERS_PATHS, window, ui) {
     Configurator &configurator = Configurator::Get();
 
     this->ui->layers_progress->setValue(0);
     this->ui->layers_progress->setVisible(false);
     this->ui->layers_path_lineedit->setVisible(true);
-    this->ui->layers_path_lineedit->setText(configurator.layers.last_layers_path.RelativePath().c_str());
-    this->ui->layers_validate_checkBox->setChecked(configurator.layers.validate_manifests);
+    this->ui->layers_search_clear->setEnabled(false);
+    this->ui->layers_path_lineedit->setText(configurator.layers.last_layers_dir.AbsolutePath().c_str());
 
     this->connect(this->ui->layers_browse_button, SIGNAL(clicked()), this, SLOT(on_layers_browse_pressed()));
     this->connect(this->ui->layers_reload_button, SIGNAL(clicked()), this, SLOT(on_layers_reload_pressed()));
+    // this->connect(this->ui->layers_path_lineedit, SIGNAL(editingFinished()), this, SLOT(on_layers_append_pressed()));
     this->connect(this->ui->layers_path_lineedit, SIGNAL(returnPressed()), this, SLOT(on_layers_append_pressed()));
-    this->connect(this->ui->layers_validate_checkBox, SIGNAL(toggled(bool)), this, SLOT(on_layers_validate_checkBox_toggled(bool)));
+
+    this->connect(this->ui->layers_search, SIGNAL(textEdited(QString)), this, SLOT(on_search_textEdited(QString)));
+    this->connect(this->ui->layers_search_clear, SIGNAL(clicked()), this, SLOT(on_search_clear_pressed()));
+
+    QShortcut *shortcut_search = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_F), this->ui->layers_list);
+    this->connect(shortcut_search, SIGNAL(activated()), this, SLOT(on_focus_search()));
+    QShortcut *shortcut_browse = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_O), this->ui->layers_list);
+    this->connect(shortcut_browse, SIGNAL(activated()), this, SLOT(on_layers_browse_pressed()));
+    QShortcut *shortcut_reload = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_R), this->ui->layers_list);
+    this->connect(shortcut_reload, SIGNAL(activated()), this, SLOT(on_layers_reload_pressed()));
+
+    this->ui->layers_list->installEventFilter(&window);
 }
 
 TabLayers::~TabLayers() {}
@@ -54,79 +68,59 @@ void TabLayers::UpdateUI_LayersPaths(UpdateUIMode ui_update_mode) {
 
     Configurator &configurator = Configurator::Get();
 
-    this->ui->layers_paths_tree->blockSignals(true);
+    this->ui->layers_list->blockSignals(true);
 
     switch (ui_update_mode) {
         case UPDATE_REBUILD_UI: {
-            this->ui->layers_paths_tree->clear();
-            for (std::size_t group_index = configurator.layers.paths.size(); group_index > 0; --group_index) {
-                const LayersPaths group_path = static_cast<LayersPaths>(group_index - 1);
+            this->ui->layers_list->clear();
 
-                std::vector<LayersPathInfo> &paths_group = configurator.layers.paths[group_path];
-                for (std::size_t i = 0, n = paths_group.size(); i < n; ++i) {
-                    QTreeWidgetItem *item_state = new QTreeWidgetItem;
-                    item_state->setFlags(item_state->flags() | Qt::ItemIsSelectable);
-                    item_state->setSizeHint(0, QSize(0, ITEM_HEIGHT));
-                    LayersPathWidget *layer_path_widget =
-                        new LayersPathWidget(paths_group[i], group_path, group_path == LAYERS_PATHS_GUI);
-                    this->connect(layer_path_widget, SIGNAL(itemChanged()), this, SLOT(on_paths_changed()));
-                    this->connect(layer_path_widget, SIGNAL(itemToggled()), this, SLOT(on_paths_toggled()));
+            const std::set<LayerDisplay> &layer_display_list = configurator.layers.BuildLayerDisplayList();
 
-                    ui->layers_paths_tree->addTopLevelItem(item_state);
-                    ui->layers_paths_tree->setItemWidget(item_state, 0, layer_path_widget);
+            for (auto it = layer_display_list.begin(), end = layer_display_list.end(); it != end; ++it) {
+                const Layer *layer = configurator.layers.Find(it->id, false);
+                if (layer == nullptr) {
+                    continue;
+                }
 
-                    const std::string &layer_path = paths_group[i].path.AbsolutePath();
-                    const std::vector<Path> &manifest_paths = CollectFilePaths(layer_path);
+                if (!this->layer_filter.empty()) {
+                    const std::string status = layer->status == STATUS_STABLE ? "" : format(" (%s)", ::GetToken(layer->status));
+                    const std::string text = format("%s - %s%s - %s layer", layer->key.c_str(), layer->api_version.str().c_str(),
+                                                    status.c_str(), ::GetToken(layer->type));
 
-                    for (std::size_t manifest_index = 0, manifest_count = manifest_paths.size(); manifest_index < manifest_count;
-                         ++manifest_index) {
-                        const Layer *layer = configurator.layers.FindFromManifest(manifest_paths[manifest_index], true);
-                        if (layer == nullptr) {
-                            continue;  // When the directory has JSON files that are not layer manifest
-                        }
-
-                        std::string label = layer->key;
-
-                        if (layer->is_32bits) {
-                            label += " (32 bits)";
-                        }
-
-                        label += " - " + layer->api_version.str();
-
-                        if (layer->status != STATUS_STABLE) {
-                            label += format(" (%s)", GetToken(layer->status));
-                        }
-
-                        QTreeWidgetItem *item = new QTreeWidgetItem;
-                        item->setText(0, label.c_str());
-                        item->setToolTip(0, layer->manifest_path.AbsolutePath().c_str());
-                        item->setDisabled(!paths_group[i].enabled);
-                        item_state->addChild(item);
+                    std::string lower_text = ::ToLowerCase(text);
+                    std::string layer_filter_search = ::ToLowerCase(this->layer_filter);
+                    if (lower_text.find(layer_filter_search.c_str()) == std::string::npos) {
+                        continue;
                     }
                 }
-            }
 
-            this->ui->layers_paths_tree->expandAll();
+                QListWidgetItem *item = new QListWidgetItem;
+                item->setFlags(item->flags() | Qt::ItemIsSelectable);
+                item->setSizeHint(QSize(0, ITEM_HEIGHT));
+
+                LayerWidget *layer_widget = new LayerWidget(*layer);
+                this->connect(layer_widget, SIGNAL(itemChanged()), this, SLOT(on_paths_changed()));
+                this->connect(layer_widget, SIGNAL(itemToggled()), this, SLOT(on_paths_toggled()));
+
+                this->ui->layers_list->addItem(item);
+                this->ui->layers_list->setItemWidget(item, layer_widget);
+            }
         } break;
-        case UPDATE_REFRESH_UI: {
-            for (int i = 0; i < this->ui->layers_paths_tree->topLevelItemCount(); ++i) {
-                QTreeWidgetItem *item = this->ui->layers_paths_tree->topLevelItem(i);
-                LayersPathWidget *widget = static_cast<LayersPathWidget *>(ui->layers_paths_tree->itemWidget(item, 0));
-
-                for (int i = 0; i < item->childCount(); ++i) {
-                    QTreeWidgetItem *child_item = item->child(i);
-                    child_item->setDisabled(!widget->isChecked());
-                }
-            }
+        default: {
         } break;
     }
 
-    this->ui->layers_paths_tree->blockSignals(false);
+    this->ui->layers_list->blockSignals(false);
 }
 
 void TabLayers::UpdateUI(UpdateUIMode ui_update_mode) {
+    const Configurator &configurator = Configurator::Get();
+
+    this->ui->layers_search_clear->setEnabled(!this->ui->layers_search->text().isEmpty());
+    this->ui->layers_search->setFocus();
     this->ui->layers_progress->resetFormat();
     this->ui->layers_progress->setValue(0);
+
     this->UpdateUI_LayersPaths(ui_update_mode);
 }
 
@@ -157,11 +151,6 @@ void TabLayers::on_paths_toggled() {
     this->UpdateUI_LayersPaths(UPDATE_REFRESH_UI);
 }
 
-void TabLayers::on_layers_validate_checkBox_toggled(bool checked) {
-    Configurator &configurator = Configurator::Get();
-    configurator.layers.validate_manifests = checked;
-}
-
 void TabLayers::on_layers_append_pressed() { this->LoadLayersManifest(this->ui->layers_path_lineedit->text()); }
 
 void TabLayers::on_layers_browse_pressed() {
@@ -169,14 +158,36 @@ void TabLayers::on_layers_browse_pressed() {
 
     const QString selected_path =
         QFileDialog::getExistingDirectory(this->ui->layers_browse_button, "Select Layer Manifests Folder...",
-                                          configurator.layers.last_layers_path.AbsolutePath().c_str());
+                                          configurator.layers.last_layers_dir.AbsolutePath().c_str());
 
     this->LoadLayersManifest(selected_path);
 }
 
+void TabLayers::on_focus_search() { this->ui->layers_search->setFocus(); }
+
+void TabLayers::on_search_textEdited(const QString &text) {
+    this->layer_filter = text.toStdString();
+
+    this->ui->layers_search_clear->setEnabled(!text.isEmpty());
+
+    this->UpdateUI_LayersPaths(UPDATE_REBUILD_UI);
+}
+
+void TabLayers::on_search_clear_pressed() {
+    this->layer_filter.clear();
+
+    this->ui->layers_search->clear();
+    this->ui->layers_search_clear->setEnabled(false);
+
+    this->UpdateUI_LayersPaths(UPDATE_REBUILD_UI);
+}
+
 void TabLayers::on_layers_reload_pressed() {
+    this->ui->layers_search->setVisible(false);
+    this->ui->layers_search_clear->setVisible(false);
     this->ui->layers_path_lineedit->setVisible(false);
     this->ui->layers_browse_button->setVisible(false);
+    this->ui->layers_reload_button->setVisible(false);
     this->ui->layers_progress->setVisible(true);
 
     Path new_path = this->ui->layers_path_lineedit->text().toStdString();
@@ -185,13 +196,7 @@ void TabLayers::on_layers_reload_pressed() {
 
     std::vector<int> layers_count(LAYER_LOAD_COUNT, 0);
 
-    LayersPathInfo info;
-    info.path = new_path;
-    configurator.layers.AppendPath(info);
-    configurator.layers.UpdatePathEnabled(info, LAYERS_PATHS_GUI);
-
-    const std::vector<Path> layers_paths =
-        new_path.Empty() ? configurator.layers.CollectManifestPaths() : ::CollectFilePaths(new_path);
+    const std::vector<Path> &layers_paths = ::CollectLayersPaths(new_path);
 
     this->ui->layers_progress->setMaximum(static_cast<int>(layers_paths.size()));
     this->ui->layers_progress->setValue(0);
@@ -204,7 +209,7 @@ void TabLayers::on_layers_reload_pressed() {
         this->ui->layers_progress->setValue(static_cast<int>(i + 1));
         this->ui->layers_progress->update();
 
-        LayerLoadStatus status = configurator.layers.LoadLayer(layers_paths[i], LAYER_TYPE_EXPLICIT, configurator.mode);
+        LayerLoadStatus status = configurator.layers.LoadLayers(layers_paths[i], LAYER_TYPE_EXPLICIT, configurator.mode);
         ++layers_count[status];
 
         std::this_thread::sleep_until(std::chrono::system_clock::now() + std::chrono::milliseconds(10));
@@ -213,7 +218,16 @@ void TabLayers::on_layers_reload_pressed() {
     configurator.UpdateConfigurations();
     configurator.Override(OVERRIDE_AREA_ALL);
 
-    std::string last_layers_path = configurator.layers.last_layers_path.AbsolutePath();
+    // std::string last_layers_path = configurator.layers.last_layers_dir.AbsolutePath();
+
+    this->ui->layers_search->setVisible(true);
+    this->ui->layers_search_clear->setVisible(true);
+    this->ui->layers_path_lineedit->setVisible(true);
+    this->ui->layers_browse_button->setVisible(true);
+    this->ui->layers_reload_button->setVisible(true);
+    this->ui->layers_progress->setVisible(false);
+
+    this->UpdateUI_LayersPaths(UPDATE_REBUILD_UI);
 
     if (!configurator.Get(HIDE_MESSAGE_NOTIFICATION_LAYERS_LOADED)) {
         std::string text = "Loading and reloading all located layers manifests:\n";
@@ -234,18 +248,18 @@ void TabLayers::on_layers_reload_pressed() {
             configurator.Set(HIDE_MESSAGE_NOTIFICATION_LAYERS_LOADED);
         }
     }
-
-    this->ui->layers_path_lineedit->setVisible(true);
-    this->ui->layers_browse_button->setVisible(true);
-    this->ui->layers_progress->setVisible(false);
 }
 
 void TabLayers::LoadLayersManifest(const QString &selected_path) {
     Configurator &configurator = Configurator::Get();
 
     if (!selected_path.isEmpty()) {
-        configurator.layers.last_layers_path = selected_path.toStdString();
-        this->ui->layers_path_lineedit->setText(configurator.layers.last_layers_path.AbsolutePath().c_str());
+        configurator.layers.last_layers_dir = selected_path.toStdString();
+        if (!configurator.layers.last_layers_dir.Empty()) {
+            this->ui->layers_path_lineedit->setText(configurator.layers.last_layers_dir.AbsolutePath().c_str());
+        }
+
+        configurator.layers.gui_added_layers_paths.insert(configurator.layers.last_layers_dir);
 
         this->on_layers_reload_pressed();
 

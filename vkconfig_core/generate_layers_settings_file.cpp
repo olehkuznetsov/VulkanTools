@@ -22,7 +22,8 @@
 
 // Create and write vk_layer_settings.txt file
 bool GenerateSettingsTXT(Configurator& configurator, OverrideArea override_area, const Path& layers_settings_path) {
-    if (override_area & OVERRIDE_AREA_LAYERS_SETTINGS_BIT) {
+    if (configurator.mode == CONFIGURATOR_MODE_CMD ||
+        (configurator.layers_override_enabled && (override_area & OVERRIDE_AREA_LAYERS_SETTINGS_BIT))) {
         std::vector<LayersSettings> layers_settings_array;
 
         switch (configurator.GetExecutableScope()) {
@@ -37,27 +38,32 @@ bool GenerateSettingsTXT(Configurator& configurator, OverrideArea override_area,
             case EXECUTABLE_PER: {
                 const std::vector<Executable>& executables = configurator.executables.GetExecutables();
 
-                std::string configuration_name = configurator.GetSelectedGlobalConfiguration();
-
                 for (std::size_t i = 0, n = executables.size(); i < n; ++i) {
                     if (!executables[i].enabled) {
                         continue;
                     }
 
-                    if (::EnabledExecutables(configurator.GetExecutableScope())) {
-                        configuration_name = executables[i].configuration;
-                    }
-
                     LayersSettings settings;
                     settings.executable_path = executables[i].path;
-                    settings.configuration_name = configuration_name;
-                    settings.settings_path = executables[i].GetLocalLayersSettingsPath();
+
+                    if (configurator.GetExecutableScope() == EXECUTABLE_PER) {
+                        settings.configuration_name = executables[i].configuration;
+                        settings.settings_path = executables[i].GetLocalLayersSettingsPath();
+                    } else {
+                        settings.configuration_name = configurator.GetSelectedGlobalConfiguration();
+                        if (configurator.GetAllEnabledExecutableBehavior() == EXECUTABLE_ALL_ENABLED_WORKING_DIR) {
+                            settings.settings_path = executables[i].GetLocalLayersSettingsPath();
+                        } else {
+                            settings.settings_path = layers_settings_path;
+                        }
+                    }
+
                     layers_settings_array.push_back(settings);
                 }
                 break;
             }
             default:
-            case EXECUTABLE_NONE:
+                assert(0);
                 break;
         }
 
@@ -156,12 +162,12 @@ bool GenerateSettingsTXT(Configurator& configurator, OverrideArea override_area,
                             has_missing_layers = true;
                             configurator.Log(
                                 LOG_ERROR,
-                                format("`%s` layer is set to `%s` in `%s` loader configuration but missing and being ignored\n",
+                                format("`%s` layer is set to `%s` in `%s` layers configuration but missing and being ignored\n",
                                        parameter.key.c_str(), ::GetLabel(parameter.control), configuration->key.c_str()));
                         } else {
                             configurator.Log(
                                 LOG_WARN,
-                                format("`%s` layer is set to `%s` in `%s` loader configuration but missing and being ignored\n",
+                                format("`%s` layer is set to `%s` in `%s` layers configuration but missing and being ignored\n",
                                        parameter.key.c_str(), ::GetLabel(parameter.control), configuration->key.c_str()));
                         }
                         continue;

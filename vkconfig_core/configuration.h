@@ -54,7 +54,10 @@ class Configuration {
     void SwitchLayerVersion(const LayerManager& layers, const std::string& layer_key, const Path& manifest_path);
     void SwitchLayerLatest(const LayerManager& layers, const std::string& layer_key);
     void GatherParameters(const LayerManager& layers);
+    void ResetLayersOrder(const LayerManager& layers);
     void Reorder(const std::vector<std::string>& layer_names);
+
+    std::vector<Parameter*> GatherImplicitAutoLayers();
 
     std::string key = "New Configuration";  // User readable display of the configuration name (may contain spaces)
     int version = 1;
@@ -62,12 +65,7 @@ class Configuration {
     LayerControl default_control = LAYER_CONTROL_AUTO;
     bool override_settings = false;
     Path override_settings_path;
-    // bool override_layers = true; // Keep or not ?
     std::string selected_layer_name;
-    // bool override_driver = false;
-    // std::string override_driver_name = DEFAULT_PHYSICAL_DEVICE;
-    // bool override_loader = true;
-    // int loader_log_messages_flags = GetBit(LOG_ERROR);
 
     std::vector<Parameter> parameters;
 

@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2020-2021 Valve Corporation
- * Copyright (c) 2020-2021 LunarG, Inc.
+ * Copyright (c) 2020-2026 Valve Corporation
+ * Copyright (c) 2020-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,8 +59,8 @@ class WidgetSettingFloat : public WidgetSettingBase {
 
     std::string value_buffer;
     QLineEdit* field;
-    QTimer* timer_error;
-    QTimer* timer_valid;
+    QTimer* timer_error = nullptr;
+    QTimer* timer_valid = nullptr;
     QSize resize;
     QPalette default_palette;
 };

@@ -20,6 +20,7 @@
  */
 
 #include "mainwindow.h"
+#include "style.h"
 
 #include "../vkconfig_core/configurator.h"
 #include "../vkconfig_core/util.h"
@@ -40,23 +41,19 @@
 #include <QFileDialog>
 #include <QDesktopServices>
 #include <QSettings>
+#include <QWidgetAction>
+#include <QShortcut>
+#include <QSignalMapper>
 
 #include <cassert>
 
 MainWindow::MainWindow(QApplication &app, QWidget *parent)
-    : QMainWindow(parent),
-      _tray_icon(nullptr),
-      _tray_icon_menu(nullptr),
-      _tray_restore_action(nullptr),
-      _tray_layers{nullptr, nullptr, nullptr, nullptr},
-      _tray_quit_action(nullptr),
-      app(app),
-      ui(new Ui::MainWindow) {
+    : QMainWindow(parent), _tray_icon(nullptr), app(app), ui(new Ui::MainWindow) {
     ui->setupUi(this);
 
     this->tabs[TAB_DIAGNOSTIC].reset(new TabDiagnostics(*this, ui));
     this->tabs[TAB_APPLICATIONS].reset(new TabApplications(*this, ui));
-    this->tabs[TAB_LAYERS].reset(new TabLayers(*this, ui));
+    this->tabs[TAB_LAYERS_PATHS].reset(new TabLayers(*this, ui));
     this->tabs[TAB_CONFIGURATIONS].reset(new TabConfigurations(*this, ui));
     this->tabs[TAB_DOCUMENTATION].reset(new TabDocumentation(*this, ui));
     this->tabs[TAB_DRIVERS].reset(new TabDrivers(*this, ui));
@@ -77,8 +74,10 @@ MainWindow::MainWindow(QApplication &app, QWidget *parent)
     }
 
     this->ui->tab_widget->setCurrentIndex(configurator.active_tab);
+    this->ui->tab_widget->installEventFilter(this);
 
-    this->InitTray();
+    this->connect(ui->tab_widget, SIGNAL(currentChanged(int)), this, SLOT(on_tab_widget_currentChanged(int)));
+
     this->UpdateUI(UPDATE_REBUILD_UI);
 
     configurator.Override(OVERRIDE_AREA_ALL);
@@ -103,66 +102,257 @@ void MainWindow::UpdateUI(UpdateUIMode mode) {
     this->UpdateUI_Status();
 }
 
-void MainWindow::InitTray() {
-    if (QSystemTrayIcon::isSystemTrayAvailable()) {
-        this->_tray_quit_action = new QAction("&Quit", this);
-        this->connect(this->_tray_quit_action, &QAction::triggered, qApp, &QCoreApplication::quit);
-        this->_tray_restore_action = new QAction("Open &Vulkan Configurator", this);
-        this->connect(this->_tray_restore_action, &QAction::triggered, this, &MainWindow::trayActionRestore);
-
-        this->_tray_icon_menu = new QMenu(this);
-        this->_tray_icon_menu->addAction(this->_tray_restore_action);
-        this->_tray_icon_menu->addSeparator();
-        for (int i = 0, n = EXECUTABLE_SCOPE_COUNT; i < n; ++i) {
-            this->_tray_layers[i] = new QAction(::GetLabel(static_cast<ExecutableScope>(i)), this);
-            this->_tray_layers[i]->setCheckable(true);
-            this->_tray_icon_menu->addAction(this->_tray_layers[i]);
-        }
-
-        this->connect(this->_tray_layers[EXECUTABLE_NONE], &QAction::toggled, this, &MainWindow::on_tray_none);
-        this->connect(this->_tray_layers[EXECUTABLE_ANY], &QAction::toggled, this, &MainWindow::on_tray_any);
-        this->connect(this->_tray_layers[EXECUTABLE_ALL], &QAction::toggled, this, &MainWindow::on_tray_all);
-        this->connect(this->_tray_layers[EXECUTABLE_PER], &QAction::toggled, this, &MainWindow::on_tray_per);
-
-        this->_tray_icon_menu->addSeparator();
-        this->_tray_icon_menu->addAction(this->_tray_quit_action);
-        this->_tray_icon = new QSystemTrayIcon(this);
-        this->_tray_icon->setContextMenu(this->_tray_icon_menu);
-        this->_tray_icon->show();
-        this->connect(this->_tray_icon, &QSystemTrayIcon::activated, this, &MainWindow::iconActivated);
-    }
-}
-
 void MainWindow::UpdateUI_Status() {
     const Configurator &configurator = Configurator::Get();
 
     this->setWindowTitle(GetMainWindowTitle().c_str());
+
     if (QSystemTrayIcon::isSystemTrayAvailable()) {
-        for (int i = 0, n = EXECUTABLE_SCOPE_COUNT; i < n; ++i) {
-            this->_tray_layers[i]->blockSignals(true);
-            this->_tray_layers[i]->setChecked(configurator.GetExecutableScope() == i);
-            this->_tray_layers[i]->blockSignals(false);
+        // Device
+        {
+            QMenu *menu = new QMenu(this);
+            QSignalMapper *mapper_device = new QSignalMapper(menu);
+            QSignalMapper *mapper_layers = new QSignalMapper(menu);
+
+            QAction *tray_restore_action = new QAction("&Show Vulkan Configurator UI", this);
+            tray_restore_action->setIcon(QIcon(":/resourcefiles/vkconfig-on.png"));
+            QFont font = tray_restore_action->font();
+            font.setBold(true);
+            tray_restore_action->setFont(font);
+            this->connect(tray_restore_action, &QAction::triggered, this, &MainWindow::OnTrayActionShow);
+            menu->addAction(tray_restore_action);
+
+            menu->addSeparator();
+            const bool enabled_device = configurator.driver_override_enabled;
+
+            QAction *tray_override = new QAction("Override System Vulkan &Device with:", this);
+            tray_override->setFont(font);
+            tray_override->setCheckable(true);
+            tray_override->setChecked(enabled_device);
+
+            this->connect(tray_override, &QAction::toggled, this, &MainWindow::OnTrayActionOverrideDevice);
+            menu->addAction(tray_override);
+
+            for (std::size_t i = 0, n = configurator.vulkan_system_info.physicalDevices.size(); i < n; ++i) {
+                const VulkanPhysicalDeviceInfo &info = configurator.vulkan_system_info.physicalDevices[i];
+                const DeviceInfo &device_info = ::GetDeviceInfo(info);
+
+                QAction *action = new QAction(format("%s (%s)", info.GetLabel().c_str(), info.GetVersion().c_str()).c_str());
+                action->setCheckable(true);
+                action->setChecked(device_info == configurator.driver_override_info);
+                action->setEnabled(enabled_device);
+
+                menu->addAction(action);
+
+                this->connect(action, SIGNAL(triggered()), mapper_device, SLOT(map()));
+                mapper_device->setMapping(action, i);
+            }
+
+            this->connect(mapper_device, &QSignalMapper::mappedInt, this, &MainWindow::OnDeviceChanged);
+
+            menu->addSeparator();
+            const bool enabled_layers = configurator.layers_override_enabled && configurator.GetExecutableScope() != EXECUTABLE_PER;
+
+            QAction *tray_override_layers = new QAction("Override System Vulkan &Layers Configuration with:", this);
+            tray_override_layers->setFont(font);
+            tray_override_layers->setCheckable(true);
+            tray_override_layers->setChecked(enabled_layers);
+
+            this->connect(tray_override_layers, &QAction::toggled, this, &MainWindow::OnTrayActionOverrideLayers);
+            menu->addAction(tray_override_layers);
+
+            for (std::size_t i = 0, n = configurator.configurations.available_configurations.size(); i < n; ++i) {
+                const Configuration &configuration = configurator.configurations.available_configurations[i];
+
+                QAction *action = new QAction(configuration.key.c_str(), this);
+                action->setCheckable(true);
+                action->setChecked(configuration.key == configurator.GetSelectedGlobalConfiguration());
+                action->setEnabled(enabled_layers);
+
+                menu->addAction(action);
+
+                this->connect(action, SIGNAL(triggered()), mapper_layers, SLOT(map()));
+                mapper_layers->setMapping(action, i);
+            }
+
+            this->connect(mapper_layers, &QSignalMapper::mappedInt, this, &MainWindow::OnLayersChanged);
+
+            menu->addSeparator();
+
+            QAction *tray_override_loader = new QAction("Override System Vulkan Loader Log", this);
+            tray_override_loader->setFont(font);
+            tray_override_loader->setCheckable(true);
+            tray_override_loader->setChecked(configurator.loader_log_enabled);
+            this->connect(tray_override_loader, &QAction::toggled, this, &MainWindow::OnTrayActionOverrideLog);
+            menu->addAction(tray_override_loader);
+
+            menu->addSeparator();
+
+            QAction *tray_quit_action = new QAction("&Quit Vulkan Configurator", this);
+            tray_quit_action->setIcon(::Get(configurator.current_theme_mode, ::ICON_EXIT));
+            tray_quit_action->setFont(font);
+            this->connect(tray_quit_action, &QAction::triggered, qApp, &QCoreApplication::quit);
+            menu->addAction(tray_quit_action);
+
+            if (this->_tray_icon != nullptr) {
+                delete this->_tray_icon;
+            }
+
+            this->_tray_icon = new QSystemTrayIcon(this);
+            this->_tray_icon->setContextMenu(menu);
+            this->_tray_icon->show();
+            this->connect(this->_tray_icon, &QSystemTrayIcon::activated, this, &MainWindow::OnIconActivated);
+
+            if (configurator.layers_override_enabled || configurator.driver_override_enabled || configurator.loader_log_enabled) {
+                this->_tray_icon->setIcon(QIcon(":/resourcefiles/vkconfig-on.png"));
+            } else {
+                this->_tray_icon->setIcon(QIcon(":/resourcefiles/vkconfig-off.png"));
+            }
         }
     }
 
-    if (configurator.GetExecutableScope() != EXECUTABLE_NONE) {
-        const QIcon icon(":/resourcefiles/vkconfig-on.png");
-        this->setWindowIcon(icon);
+    /*
         if (QSystemTrayIcon::isSystemTrayAvailable()) {
-            this->_tray_icon->setIcon(icon);
-            this->_tray_icon->setToolTip("Layers controlled by the Vulkan Configurator");
+            // Layers
+            {
+                QMenu *menu_layers = new QMenu(this);
+                QSignalMapper *mapper = new QSignalMapper(this);
+
+                QAction *tray_restore_action = new QAction("&Show Vulkan Configurator UI", this);
+                tray_restore_action->setIcon(QIcon(":/resourcefiles/vkconfig-on.png"));
+                QFont font = tray_restore_action->font();
+                font.setBold(true);
+                tray_restore_action->setFont(font);
+                this->connect(tray_restore_action, &QAction::triggered, this, &MainWindow::OnTrayActionShow);
+                menu_layers->addAction(tray_restore_action);
+
+                menu_layers->addSeparator();
+                const bool enabled_layers = configurator.layers_override_enabled && configurator.GetExecutableScope() !=
+       EXECUTABLE_PER;
+
+                QAction *tray_override_layers = new QAction("Override System Vulkan &Layers Configuration with:", this);
+                tray_override_layers->setFont(font);
+                tray_override_layers->setCheckable(true);
+                tray_override_layers->setChecked(enabled_layers);
+
+                this->connect(tray_override_layers, &QAction::toggled, this, &MainWindow::OnTrayActionOverrideLayers);
+                menu_layers->addAction(tray_override_layers);
+
+                for (std::size_t i = 0, n = configurator.configurations.available_configurations.size(); i < n; ++i) {
+                    const Configuration &configuration = configurator.configurations.available_configurations[i];
+
+                    QAction *action = new QAction(configuration.key.c_str(), this);
+                    action->setCheckable(true);
+                    action->setChecked(configuration.key == configurator.GetSelectedGlobalConfiguration());
+                    action->setEnabled(enabled_layers);
+
+                    // this->connect(action, &QAction::toggled, this, &MainWindow::OnTrayActionOverrideLayers);
+                    menu_layers->addAction(action);
+
+                    this->connect(action, SIGNAL(triggered()), mapper, SLOT(map()));
+                    mapper->setMapping(action, i);
+                }
+
+                this->connect(mapper, &QSignalMapper::mappedInt, this, &MainWindow::OnLayersChanged);
+
+                menu_layers->addSeparator();
+
+                QAction *tray_quit_action = new QAction("&Quit Vulkan Configurator", this);
+                tray_quit_action->setIcon(::Get(configurator.current_theme_mode, ::ICON_EXIT));
+                tray_quit_action->setFont(font);
+                this->connect(tray_quit_action, &QAction::triggered, qApp, &QCoreApplication::quit);
+                menu_layers->addAction(tray_quit_action);
+
+                if (this->_tray_icon_layers != nullptr) {
+                    delete this->_tray_icon_layers;
+                }
+
+                this->_tray_icon_layers = new QSystemTrayIcon(this);
+                this->_tray_icon_layers->setContextMenu(menu_layers);
+                this->_tray_icon_layers->show();
+                this->connect(this->_tray_icon_layers, &QSystemTrayIcon::activated, this, &MainWindow::OnIconActivated);
+
+                if (configurator.layers_override_enabled) {
+                    this->_tray_icon_layers->setIcon(::Get(configurator.current_theme_mode, ::ICON_LAYERS_ON));
+                } else {
+                    this->_tray_icon_layers->setIcon(::Get(configurator.current_theme_mode, ::ICON_LAYERS_OFF));
+                }
+            }
+
+            // Device
+            {
+                QMenu *menu = new QMenu(this);
+                QSignalMapper *mapper = new QSignalMapper(this);
+
+                QAction *tray_restore_action = new QAction("&Show Vulkan Configurator UI", this);
+                tray_restore_action->setIcon(QIcon(":/resourcefiles/vkconfig-on.png"));
+                QFont font = tray_restore_action->font();
+                font.setBold(true);
+                tray_restore_action->setFont(font);
+                this->connect(tray_restore_action, &QAction::triggered, this, &MainWindow::OnTrayActionShow);
+                menu->addAction(tray_restore_action);
+
+                menu->addSeparator();
+                const bool enabled_device = configurator.driver_override_enabled;
+
+                QAction *tray_override = new QAction("Override System Vulkan &Device with:", this);
+                tray_override->setFont(font);
+                tray_override->setCheckable(true);
+                tray_override->setChecked(enabled_device);
+
+                this->connect(tray_override, &QAction::toggled, this, &MainWindow::OnTrayActionOverrideDevice);
+                menu->addAction(tray_override);
+
+                for (std::size_t i = 0, n = configurator.vulkan_system_info.physicalDevices.size(); i < n; ++i) {
+                    const VulkanPhysicalDeviceInfo &info = configurator.vulkan_system_info.physicalDevices[i];
+                    const DeviceInfo &device_info = ::GetDeviceInfo(info);
+
+                    QAction *action = new QAction(format("%s (%s)", info.GetLabel().c_str(), info.GetVersion().c_str()).c_str());
+                    action->setCheckable(true);
+                    action->setChecked(device_info == configurator.driver_override_info);
+                    action->setEnabled(enabled_device);
+
+                    menu->addAction(action);
+
+                    this->connect(action, SIGNAL(triggered()), mapper, SLOT(map()));
+                    mapper->setMapping(action, i);
+                }
+
+                this->connect(mapper, &QSignalMapper::mappedInt, this, &MainWindow::OnDeviceChanged);
+
+                menu->addSeparator();
+
+                QAction *tray_quit_action = new QAction("&Quit Vulkan Configurator", this);
+                tray_quit_action->setIcon(::Get(configurator.current_theme_mode, ::ICON_EXIT));
+                tray_quit_action->setFont(font);
+                this->connect(tray_quit_action, &QAction::triggered, qApp, &QCoreApplication::quit);
+                menu->addAction(tray_quit_action);
+
+                if (this->_tray_icon_device != nullptr) {
+                    delete this->_tray_icon_device;
+                }
+
+                this->_tray_icon_device = new QSystemTrayIcon(this);
+                this->_tray_icon_device->setContextMenu(menu);
+                this->_tray_icon_device->show();
+                this->connect(this->_tray_icon_device, &QSystemTrayIcon::activated, this, &MainWindow::OnIconActivated);
+
+                if (configurator.driver_override_enabled) {
+                    this->_tray_icon_device->setIcon(::Get(configurator.current_theme_mode, ::ICON_DEVICE_ON));
+                } else {
+                    this->_tray_icon_device->setIcon(::Get(configurator.current_theme_mode, ::ICON_DEVICE_OFF));
+                }
+            }
         }
+    */
+    if (configurator.layers_override_enabled || configurator.driver_override_enabled) {
+        this->setWindowIcon(QIcon(":/resourcefiles/vkconfig-on.png"));
     } else {
-        const QIcon icon(":/resourcefiles/vkconfig-off.png");
-        this->setWindowIcon(icon);
-        if (QSystemTrayIcon::isSystemTrayAvailable()) {
-            this->_tray_icon->setIcon(icon);
-            this->_tray_icon->setToolTip("Layers controlled by the Vulkan Applications");
-        }
+        this->setWindowIcon(QIcon(":/resourcefiles/vkconfig-off.png"));
     }
 }
 
-void MainWindow::iconActivated(QSystemTrayIcon::ActivationReason reason) {
+void MainWindow::OnIconActivated(QSystemTrayIcon::ActivationReason reason) {
     switch (reason) {
         default:
             break;
@@ -182,50 +372,56 @@ void MainWindow::iconActivated(QSystemTrayIcon::ActivationReason reason) {
     }
 }
 
-void MainWindow::trayActionRestore() {
+void MainWindow::OnTrayActionShow() {
     this->hide();
     this->showNormal();
     this->UpdateUI(UPDATE_REBUILD_UI);
 }
 
-void MainWindow::on_tray_none(bool checked) {
-    if (checked) {
-        Configurator &configurator = Configurator::Get();
-        configurator.SetExecutableScope(EXECUTABLE_NONE);
-        configurator.Override(OVERRIDE_AREA_ALL);
+void MainWindow::OnTrayActionOverrideLayers(bool toggled) {
+    Configurator &configurator = Configurator::Get();
+    configurator.layers_override_enabled = toggled;
+    configurator.Override(OVERRIDE_AREA_ALL);
 
-        this->UpdateUI(UPDATE_REBUILD_UI);
-    }
+    this->tabs[TAB_CONFIGURATIONS]->UpdateUI(UPDATE_REBUILD_UI);
+    this->UpdateUI(UPDATE_REBUILD_UI);
 }
 
-void MainWindow::on_tray_any(bool checked) {
-    if (checked) {
-        Configurator &configurator = Configurator::Get();
-        configurator.SetExecutableScope(EXECUTABLE_ANY);
-        configurator.Override(OVERRIDE_AREA_ALL);
+void MainWindow::OnLayersChanged(int index) {
+    Configurator &configurator = Configurator::Get();
+    configurator.SetActiveConfigurationName(configurator.configurations.available_configurations[index].key);
+    configurator.Override(OVERRIDE_AREA_ALL);
 
-        this->UpdateUI(UPDATE_REBUILD_UI);
-    }
+    this->tabs[TAB_CONFIGURATIONS]->UpdateUI(UPDATE_REBUILD_UI);
+    this->UpdateUI(UPDATE_REBUILD_UI);
 }
 
-void MainWindow::on_tray_all(bool checked) {
-    if (checked) {
-        Configurator &configurator = Configurator::Get();
-        configurator.SetExecutableScope(EXECUTABLE_ALL);
-        configurator.Override(OVERRIDE_AREA_ALL);
+void MainWindow::OnTrayActionOverrideDevice(bool toggled) {
+    Configurator &configurator = Configurator::Get();
+    configurator.driver_override_mode = DRIVER_MODE_SINGLE;
+    configurator.driver_override_enabled = toggled;
+    configurator.Override(OVERRIDE_AREA_LOADER_SETTINGS_BIT);
 
-        this->UpdateUI(UPDATE_REBUILD_UI);
-    }
+    this->tabs[TAB_DRIVERS]->UpdateUI(UPDATE_REBUILD_UI);
+    this->UpdateUI(UPDATE_REBUILD_UI);
 }
 
-void MainWindow::on_tray_per(bool checked) {
-    if (checked) {
-        Configurator &configurator = Configurator::Get();
-        configurator.SetExecutableScope(EXECUTABLE_PER);
-        configurator.Override(OVERRIDE_AREA_ALL);
+void MainWindow::OnDeviceChanged(int index) {
+    Configurator &configurator = Configurator::Get();
+    configurator.driver_override_info = ::GetDeviceInfo(configurator.vulkan_system_info.physicalDevices[index]);
+    configurator.Override(OVERRIDE_AREA_LOADER_SETTINGS_BIT);
 
-        this->UpdateUI(UPDATE_REBUILD_UI);
-    }
+    this->tabs[TAB_DRIVERS]->UpdateUI(UPDATE_REBUILD_UI);
+    this->UpdateUI(UPDATE_REBUILD_UI);
+}
+
+void MainWindow::OnTrayActionOverrideLog(bool toggled) {
+    Configurator &configurator = Configurator::Get();
+    configurator.loader_log_enabled = toggled;
+    configurator.Override(OVERRIDE_AREA_LOADER_SETTINGS_BIT);
+
+    this->tabs[TAB_DIAGNOSTIC]->UpdateUI(UPDATE_REBUILD_UI);
+    this->UpdateUI(UPDATE_REBUILD_UI);
 }
 
 /// The only thing we need to do here is clear the configuration if
@@ -241,7 +437,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
         if (!(configurator.Get(HIDE_MESSAGE_USE_SYSTEM_TRAY))) {
             std::string shut_down_state;
 
-            if (configurator.GetExecutableScope() != EXECUTABLE_NONE) {
+            if (configurator.layers_override_enabled) {
                 shut_down_state =
                     "Vulkan Layers override will remain in effect while Vulkan Configurator remain active in the system tray.";
             } else {
@@ -295,7 +491,7 @@ void MainWindow::showEvent(QShowEvent *event) {
 
 bool MainWindow::eventFilter(QObject *target, QEvent *event) {
     if (this->tabs[this->ui->tab_widget->currentIndex()] == nullptr) {
-        return false;
+        return true;
     }
 
     return this->tabs[this->ui->tab_widget->currentIndex()]->EventFilter(target, event);
@@ -314,6 +510,34 @@ void MainWindow::on_tab_widget_currentChanged(int index) {
 
     Configurator &configurator = Configurator::Get();
     configurator.active_tab = static_cast<TabType>(index);
+
+    switch (configurator.active_tab) {
+        case TAB_CONFIGURATIONS: {
+        } break;
+        case TAB_LAYERS_PATHS: {
+            // QShortcut *shortcut_search = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_F), this->ui->tab_widget);
+            // this->connect(shortcut_search, SIGNAL(activated()), this, SLOT(on_focus_search()));
+
+            // QShortcut *shortcut_open = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_O), this->ui->layers_list);
+            // this->connect(shortcut_open, SIGNAL(activated()), this, SLOT(on_layers_browse_pressed()));
+        } break;
+        case TAB_DRIVERS: {
+            // QShortcut *shortcut_search = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_F), this->ui->tab_widget);
+            // this->connect(shortcut_search, SIGNAL(activated()), this, SLOT(on_focus_search()));
+        } break;
+        case TAB_APPLICATIONS: {
+            // QShortcut *shortcut_search = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_F), this->ui->tab_widget);
+            // this->connect(shortcut_search, SIGNAL(activated()), this, SLOT(on_focus_search()));
+        } break;
+        case TAB_DIAGNOSTIC: {
+        } break;
+        case TAB_DOCUMENTATION: {
+        } break;
+        case TAB_PREFERENCES: {
+        } break;
+        case TAB_ABOUT: {
+        } break;
+    }
 
     this->tabs[index]->UpdateUI(UPDATE_REBUILD_UI);
 }

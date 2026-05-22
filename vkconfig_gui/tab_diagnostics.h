@@ -21,6 +21,7 @@
 #pragma once
 
 #include "tab.h"
+#include "highlighter.h"
 
 #include "../vkconfig_core/type_diagnostic_mode.h"
 #include "../vkconfig_core/path.h"
@@ -38,6 +39,8 @@ class TabDiagnostics : public Tab {
     virtual void UpdateUI(UpdateUIMode mode) override;
     virtual void CleanUI() override;
     virtual bool EventFilter(QObject* target, QEvent* event) override;
+
+    void ResetTextCursor();
 
    public Q_SLOTS:
     void on_context_menu(const QPoint& pos);
@@ -59,6 +62,7 @@ class TabDiagnostics : public Tab {
     void on_search_whole_activated();
     void on_search_regex_activated();
 
+    void on_diagnostic_loader_messages_toggled();
     void on_diagnostic_loader_messages_toggled(bool checked);
     void on_diagnostic_loader_errors_toggled(bool checked);
     void on_diagnostic_loader_warns_toggled(bool checked);
@@ -70,6 +74,8 @@ class TabDiagnostics : public Tab {
     void on_diagnostic_dir_home_pressed();
     void on_diagnostic_dir_system_pressed();
     void on_diagnostic_dir_info_pressed();
+
+    void on_timer_search();
 
     void standardOutputAvailable();                                 // stdout output is available
     void errorOutputAvailable();                                    // Layeroutput is available
@@ -83,6 +89,11 @@ class TabDiagnostics : public Tab {
     bool search_case = false;
     bool search_whole = false;
     bool search_regex = false;
+
+    bool text_is_reset = true;
+    QTimer* timer_search = nullptr;
+
+    Highlighter* highlighter = nullptr;
 
     void OnCheckedLoaderMessageTypes(bool checked);
 

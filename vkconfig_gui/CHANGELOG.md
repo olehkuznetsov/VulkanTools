@@ -1,9 +1,50 @@
-## Vulkan Configurator 3.4.3 - May 2026
-[Vulkan SDK 1.4.3XX.0](https://github.com/LunarG/VulkanTools/tree/main)
+## Vulkan Configurator 3.5.1 - July 2026
+
+### Fixes:
+- Fix dark mode message on Linux showing when not expected
+
+## Vulkan Configurator 3.5.0 - May 2026
+[Vulkan SDK 1.4.350.0](https://github.com/LunarG/VulkanTools/tree/vulkan-sdk-1.4.350)
+
+### Features:
+- Add selecting Vulkan Layers configuration from system tray
+- Add selecting Vullan physical device from system tray
+- Add enabling Vullan loader log from system tray
+- Add Vulkan Drivers override mode for no physical device
 
 ### Improvements:
+- Clarify UI to clarify what is overridden by Vulkan Configurator: Layers, Devices, Loader log
 - Improve generated layer settings C++ library to output to code for `vulkan.hpp`
 - Clean up generated layer settings C++ library for less friction on use
+- Add preferences settings to show "Vulkan Executables Scope"
+- Add `vkconfig.json` backup when doing a "Reset To Default" #2570
+- Add "Discard Ordering and Enabling Layers" default configuration #2596
+- Improve Vulkan drivers loading, add all drivers in a part at once
+- Refactor layers tab to display layer sorted by name and enabling them individually
+- Add layer search bar in layer tab
+- Show paths instead of Vulkan Configurator variables
+- Improve UI consistency
+- Move 'Validate Layer Manifest' settings to the preference tab
+- Improve keyboard shortcuts
+- Add layer display option to show only explicit layers #2636
+- Add enabled and ordered layers to generated configuration files #2634 #2565
+- Improve "search" usability with highligher
+- Add layer messages only on specified platforms #2650
+- Improve application launcher log stream speed
+
+### Fixes:
+- Fix command line whitespace decoding #2625
+- Fix application launcher 'options' edit #2598
+- Fix "Vulkan Layers Located by Vulkan Applications" tooltips #2595
+- Fix "discard" layer control tooltip #2595
+- Fix "Validation with API Dump log" configuration not loaded
+- Fix high CPU usage on idle when no layers configuration is active #2603
+- Fix UUID display in log, following the RFC9562 standard
+- Fix icon to remove a Vulkan driver
+- Fix key binding shortcuts (Eg: CTRL+F to search things on various tabs)
+- Fix `VK_LAYER_NV_present` or `VK_LAYER_NV_optimus` not found #2597
+- Fix per-layer settings checkbox to prevent writing the settings being ignored
+- Fix missing layer setting status to setting group type
 
 ## Vulkan Configurator 3.4.2 - Febuary 2026
 [Vulkan SDK 1.4.341.0](https://github.com/LunarG/VulkanTools/tree/vulkan-sdk-1.4.341)
@@ -25,7 +66,7 @@
 - Add `settings --layers` command lines option to list multiple layer names when generating files
 - Add Validation and API Dump default configuration for interleaved log in stdout
 - Add diagnostic log refresh button
-- Add layer settings reset to default values button
+- Add layer settings reset to default values button #2573
 - Improved UI to set an external `vk_layer_settings.txt` file
 - Improved "View Enabled Layers" and "Configure All Layers" UI
 - Add buttons to open Vulkan SDK directories in diagnostics tab #2585
