@@ -14,7 +14,7 @@
  */
 
 #include "layer_test_helper.h"
-#include "../debug_marker.h"
+#include "../debug_marker/debug_marker.h"
 #include <vulkan/vulkan_core.h>
 #include <gtest/gtest.h>
 #include <stdlib.h>

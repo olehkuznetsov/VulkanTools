@@ -161,19 +161,25 @@ if(BUILD_DEBUGMARKER)
     add_library(VkLayer_DebugMarker MODULE)
     set_target_properties(VkLayer_DebugMarker PROPERTIES FOLDER "layers/debugmarker")
     target_sources(VkLayer_DebugMarker PRIVATE
-        debug_marker_handwritten_dispatch.cpp
-        debug_marker_handwritten_functions.h
-        debug_marker_handwritten_functions_vk_ext_debug_marker.h
-        debug_marker_handwritten_functions_vk_ext_debug_utils.h
-        debug_marker.h
-        debug_marker.cpp
-        debug_marker_perfetto.h
-        debug_marker_perfetto.cpp
+        debug_marker/debug_marker_handwritten_dispatch.cpp
+        debug_marker/debug_marker_handwritten_functions.h
+        debug_marker/debug_marker_handwritten_functions_vk_ext_debug_marker.h
+        debug_marker/debug_marker_handwritten_functions_vk_ext_debug_utils.h
+        debug_marker/debug_marker.h
+        debug_marker/debug_marker.cpp
+        debug_marker/debug_marker_perfetto.h
+        debug_marker/debug_marker_perfetto.cpp
         perfetto/perfetto.cc
         vk_layer_table.cpp
         vk_layer_table.h
         layer_keep_alive.cpp
-        json/VkLayer_DebugMarker.json.in
+        debug_marker/VkLayer_DebugMarker.json.in
+    )
+
+    target_include_directories(VkLayer_DebugMarker PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/debug_marker
+        ${CMAKE_CURRENT_BINARY_DIR}
     )
 
     if(CMAKE_SYSTEM_NAME MATCHES "Linux|BSD|DragonFly|GNU")
@@ -199,6 +205,12 @@ foreach(layer ${TOOL_LAYERS})
         continue()
     endif()
 
+    if (layer STREQUAL "VkLayer_DebugMarker")
+        set(layer_dir "debug_marker/")
+    else()
+        set(layer_dir "")
+    endif()
+
     target_link_Libraries(${layer} PRIVATE Vulkan::Headers Vulkan::UtilityHeaders Vulkan::LayerSettings)
 
     if (ANDROID)
@@ -212,9 +224,9 @@ foreach(layer ${TOOL_LAYERS})
     target_include_directories(${layer} PRIVATE .)
 
     if (MSVC)
-        target_link_options(${layer} PRIVATE /DEF:${CMAKE_CURRENT_SOURCE_DIR}/${layer}.def)
+        target_link_options(${layer} PRIVATE /DEF:${CMAKE_CURRENT_SOURCE_DIR}/${layer_dir}${layer}.def)
     elseif(MINGW)
-        target_sources(${layer} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/${layer}.def)
+        target_sources(${layer} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/${layer_dir}${layer}.def)
         target_compile_definitions(${layer} PRIVATE uid_t=int)
     endif()
 
@@ -237,7 +249,11 @@ foreach(layer ${TOOL_LAYERS})
         continue()
     endif()
 
-    set(INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/json/${layer}.json.in")
+    if (layer STREQUAL "VkLayer_DebugMarker")
+        set(INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/debug_marker/${layer}.json.in")
+    else()
+        set(INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/json/${layer}.json.in")
+    endif()
     set(INTERMEDIATE_FILE "${CMAKE_CURRENT_BINARY_DIR}/json/intermediate-${layer}.json")
     set(OUTPUT_FILE_FINAL_NAME "${layer}.json")
     set(LAYER_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR})
