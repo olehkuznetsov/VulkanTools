@@ -125,19 +125,25 @@ if(BUILD_CPUTIMING)
     add_library(VkLayer_CPUTiming MODULE)
     set_target_properties(VkLayer_CPUTiming PROPERTIES FOLDER "layers/cputiming")
     target_sources(VkLayer_CPUTiming PRIVATE
-        cputiming_handwritten_dispatch.cpp
+        cpu_timing/cputiming_handwritten_dispatch.cpp
         generated/cputiming_dispatch.h
         generated/cputiming_implementation.h
-        cputiming_handwritten_functions.h
-        cputiming.h
-        cputiming.cpp
+        cpu_timing/cputiming_handwritten_functions.h
+        cpu_timing/cputiming.h
+        cpu_timing/cputiming.cpp
         perfetto/perfetto.cc
         perfetto/perfetto_helpers.cpp
         ../scripts/generators/cputiming_generator.py
         vk_layer_table.cpp
         vk_layer_table.h
         layer_keep_alive.cpp
-        json/VkLayer_CPUTiming.json.in
+        cpu_timing/VkLayer_CPUTiming.json.in
+    )
+
+    target_include_directories(VkLayer_CPUTiming PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/cpu_timing
+        ${CMAKE_CURRENT_BINARY_DIR}
     )
 
     if(CMAKE_SYSTEM_NAME MATCHES "Linux|BSD|DragonFly|GNU")
@@ -207,6 +213,8 @@ foreach(layer ${TOOL_LAYERS})
 
     if (layer STREQUAL "VkLayer_DebugMarker")
         set(layer_dir "debug_marker/")
+    elseif(layer STREQUAL "VkLayer_CPUTiming")
+        set(layer_dir "cpu_timing/")
     else()
         set(layer_dir "")
     endif()
@@ -251,6 +259,8 @@ foreach(layer ${TOOL_LAYERS})
 
     if (layer STREQUAL "VkLayer_DebugMarker")
         set(INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/debug_marker/${layer}.json.in")
+    elseif(layer STREQUAL "VkLayer_CPUTiming")
+        set(INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cpu_timing/${layer}.json.in")
     else()
         set(INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/json/${layer}.json.in")
     endif()
