@@ -1,4 +1,4 @@
-#include "screenshots_perfetto_helpers.h"
+#include "screenshot_perfetto.h"
 #include <atomic>
 #include <thread>
 #include <mutex>

@@ -60,7 +60,7 @@
 
 #include "vk_layer_table.h"
 #include "screenshot_parsing.h"
-#include "perfetto/screenshots_perfetto_helpers.h"
+#include "screenshot_perfetto.h"
 #include "screenshot_writer.h"
 
 using namespace std;

@@ -1,7 +1,7 @@
-#ifndef LAYERSVT_SCREENSHOTS_PERFETTO_HELPERS_H
-#define LAYERSVT_SCREENSHOTS_PERFETTO_HELPERS_H
+#ifndef LAYERSVT_SCREENSHOT_PERFETTO_H
+#define LAYERSVT_SCREENSHOT_PERFETTO_H
 
-#include "perfetto.h"
+#include "perfetto/perfetto.h"
 
 class ScreenshotDataSource : public perfetto::DataSource<ScreenshotDataSource> {
    public:
@@ -11,4 +11,4 @@ class ScreenshotDataSource : public perfetto::DataSource<ScreenshotDataSource> {
 
 void InitializeScreenshotsPerfetto();
 
-#endif  // LAYERSVT_SCREENSHOTS_PERFETTO_HELPERS_H
+#endif  // LAYERSVT_SCREENSHOT_PERFETTO_H

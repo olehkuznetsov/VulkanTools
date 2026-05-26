@@ -108,16 +108,16 @@ if(BUILD_SCREENSHOT)
     add_library(VkLayer_screenshot MODULE)
     set_target_properties(VkLayer_screenshot PROPERTIES FOLDER "layers/screenshot")
     target_sources(VkLayer_screenshot PRIVATE
-        screenshot.cpp
-        screenshot_parsing.cpp
-        screenshot_parsing.h
+        screenshot/screenshot.cpp
+        screenshot/screenshot_parsing.cpp
+        screenshot/screenshot_parsing.h
         perfetto/perfetto.cc
-        perfetto/screenshots_perfetto_helpers.cpp
+        screenshot/screenshot_perfetto.cpp
         vk_layer_table.cpp
         vk_layer_table.h
-        screenshot_layer.md
+        screenshot/screenshot_layer.md
         layer_keep_alive.cpp
-        json/VkLayer_screenshot.json.in
+        screenshot/json/VkLayer_screenshot.json.in
     )
 endif()
 
@@ -215,6 +215,8 @@ foreach(layer ${TOOL_LAYERS})
         set(layer_dir "debug_marker/")
     elseif(layer STREQUAL "VkLayer_CPUTiming")
         set(layer_dir "cpu_timing/")
+    elseif(layer STREQUAL "VkLayer_screenshot")
+        set(layer_dir "screenshot/")
     else()
         set(layer_dir "")
     endif()
@@ -261,9 +263,13 @@ foreach(layer ${TOOL_LAYERS})
         set(INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/debug_marker/${layer}.json.in")
     elseif(layer STREQUAL "VkLayer_CPUTiming")
         set(INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cpu_timing/${layer}.json.in")
+    elseif(layer STREQUAL "VkLayer_screenshot")
+        set(INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/screenshot/json/${layer}.json.in")
     else()
         set(INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/json/${layer}.json.in")
     endif()
+
+
     set(INTERMEDIATE_FILE "${CMAKE_CURRENT_BINARY_DIR}/json/intermediate-${layer}.json")
     set(OUTPUT_FILE_FINAL_NAME "${layer}.json")
     set(LAYER_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR})
