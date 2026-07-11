@@ -99,6 +99,7 @@ struct SwapchainMapStruct {
     VkDevice device;
     VkExtent2D imageExtent;
     VkFormat format;
+    VkSurfaceTransformFlagBitsKHR preTransform;
     std::vector<VkImage> imageList;
 };
 static unordered_map<VkSwapchainKHR, SwapchainMapStruct> swapchainMap;
@@ -155,6 +156,9 @@ class Settings {
     // If false and screenshots queue is full delays next frame present.
     bool allowToSkipFrames = false;
 
+    // If true, screenshots will respect the preTransform of the swapchain.
+    bool applyPrerotation = false;
+
     // Is profiling enabled
     bool isProfilingEnabled = true;
 
@@ -181,6 +185,15 @@ class Settings {
     set<int> screenshotFrames;
 };
 
+/**
+ * Initialize layer settings.
+ *
+ * NOTE: When defining setting keys, keep them short (ideally <= 7 characters).
+ * Vulkan-Utility-Libraries prefixes the layer name when fetching Android properties
+ * (e.g., "debug.vulkan.screenshot." is 24 characters). The __system_property_get
+ * C-API has a strict PROP_NAME_MAX limit of 31 characters. To ensure properties
+ * can be successfully read on Android, the combined string length must be <= 31.
+ */
 void Settings::init(VkuLayerSettingSet layerSettingSet) {
     const char* kSettingsKeyFrames = "frames";
     const char* kSettingKeyFormat = "format";
@@ -188,8 +201,9 @@ void Settings::init(VkuLayerSettingSet layerSettingSet) {
     const char* kSettingScale = "scale";
     const char* kSettingQueueSize = "queue";
     const char* kSettingAllowSkip = "skip";
+    const char* kSettingApplyPrerotation = "prerot";
     const char* kSettingProfile = "profile";
-    const char* kSettingScreenshotExtension = "extension";
+    const char* kSettingScreenshotExtension = "ext";
 
     if (vkuHasLayerSetting(layerSettingSet, kSettingScale)) {
         vkuGetLayerSettingValue(layerSettingSet, kSettingScale, scalePercent);
@@ -203,6 +217,10 @@ void Settings::init(VkuLayerSettingSet layerSettingSet) {
 
     if (vkuHasLayerSetting(layerSettingSet, kSettingAllowSkip)) {
         vkuGetLayerSettingValue(layerSettingSet, kSettingAllowSkip, allowToSkipFrames);
+    }
+
+    if (vkuHasLayerSetting(layerSettingSet, kSettingApplyPrerotation)) {
+        vkuGetLayerSettingValue(layerSettingSet, kSettingApplyPrerotation, applyPrerotation);
     }
 
     if (vkuHasLayerSetting(layerSettingSet, kSettingProfile)) {
@@ -772,24 +790,27 @@ static VkFormat determineOutputFormat(VkFormat format, ColorSpaceFormat userColo
 
 // Contains data required for frame's screenshot
 struct ScreenshotQueueData {
-    uint32_t frameNumber;
+    uint32_t frameNumber = 0;
     VkDevice device = VK_NULL_HANDLE;
-    VkSwapchainKHR swapchain;
-    VkImage image1;  // source image
-    VkuDeviceDispatchTable* pTableDevice;
-    uint32_t dstWidth;
-    uint32_t dstHeight;
-    int dstNumChannels;
+    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+    VkImage image1 = VK_NULL_HANDLE;  // source image
+    VkuDeviceDispatchTable* pTableDevice = nullptr;
+    uint32_t dstWidth = 0;
+    uint32_t dstHeight = 0;
+    int dstNumChannels = 0;
+    VkSurfaceTransformFlagBitsKHR preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    // Cached buffer for pre-rotation, kept here to avoid per-frame allocation overhead.
+    std::vector<uint8_t> rotatedPixelsBuffer;
 
     // Below is data to clean up in destructor
-    VkImage image2;
-    VkImage image3;
-    VkDeviceMemory mem2;
-    VkDeviceMemory mem3;
-    VkCommandBuffer commandBuffer;
-    VkCommandPool commandPool;
-    VkSemaphore semaphore;
-    VkFence fence;
+    VkImage image2 = VK_NULL_HANDLE;
+    VkImage image3 = VK_NULL_HANDLE;
+    VkDeviceMemory mem2 = VK_NULL_HANDLE;
+    VkDeviceMemory mem3 = VK_NULL_HANDLE;
+    VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+    VkCommandPool commandPool = VK_NULL_HANDLE;
+    VkSemaphore semaphore = VK_NULL_HANDLE;
+    VkFence fence = VK_NULL_HANDLE;
     ~ScreenshotQueueData();
 };
 
@@ -1111,7 +1132,7 @@ bool prepareScreenshotData(ScreenshotQueueData& data, VkImage image1) {
     auto it = deviceMap[device]->queueIndexMap.find(queue);
     assert(it != deviceMap[device]->queueIndexMap.end());
     cmd_pool_info.queueFamilyIndex = it->second;
-    cmd_pool_info.flags = 0;
+    cmd_pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
     err = pTableDevice->CreateCommandPool(device, &cmd_pool_info, NULL, &data.commandPool);
     assert(!err);
@@ -1335,6 +1356,51 @@ static bool queueScreenshot(ScreenshotQueueData& data, VkImage image1, const VkP
     return true;
 }
 
+enum class ImageRotation {
+    DEG_0,
+    DEG_90,
+    DEG_180,
+    DEG_270
+};
+
+template <ImageRotation ROTATION, bool MIRRORED = false>
+static void RotateImagePixels(const uint8_t* src_bytes, uint8_t* dst_bytes, uint32_t src_width, uint32_t src_height, uint32_t final_width, uint32_t final_height, int numChannels, int rowPitch) {
+    constexpr uint32_t TILE_SIZE = 32;
+    for (uint32_t dst_y_block = 0; dst_y_block < final_height; dst_y_block += TILE_SIZE) {
+        for (uint32_t dst_x_block = 0; dst_x_block < final_width; dst_x_block += TILE_SIZE) {
+            uint32_t max_y = std::min(dst_y_block + TILE_SIZE, final_height);
+            uint32_t max_x = std::min(dst_x_block + TILE_SIZE, final_width);
+
+            for (uint32_t dst_y = dst_y_block; dst_y < max_y; ++dst_y) {
+                for (uint32_t dst_x = dst_x_block; dst_x < max_x; ++dst_x) {
+                    uint32_t src_x = dst_x;
+                    uint32_t src_y = dst_y;
+                    if constexpr (ROTATION == ImageRotation::DEG_90) {
+                        src_x = src_width - 1 - dst_y;
+                        src_y = dst_x;
+                    } else if constexpr (ROTATION == ImageRotation::DEG_270) {
+                        src_x = dst_y;
+                        src_y = src_height - 1 - dst_x;
+                    } else if constexpr (ROTATION == ImageRotation::DEG_180) {
+                        src_x = src_width - 1 - dst_x;
+                        src_y = src_height - 1 - dst_y;
+                    }
+                    
+                    if constexpr (MIRRORED) {
+                        src_x = src_width - 1 - src_x;
+                    }
+                    
+                    const uint8_t* src_pixel_ptr = src_bytes + src_y * rowPitch + src_x * numChannels;
+                    uint8_t* dst_pixel_ptr = dst_bytes + (dst_y * final_width + dst_x) * numChannels;
+                    for (int c = 0; c < numChannels; ++c) {
+                        dst_pixel_ptr[c] = src_pixel_ptr[c];
+                    }
+                }
+            }
+        }
+    }
+}
+
 // Save an image to a PPM image file.
 // Returns true if file is successfully written, false otherwise.
 static void writeScreenshot(ScreenshotQueueData& data) {
@@ -1355,7 +1421,59 @@ static void writeScreenshot(ScreenshotQueueData& data) {
 
     pixels += srLayout.offset;
 
-    screenshotWriter->write(pixels, data.dstWidth, data.dstHeight, data.dstNumChannels, srLayout.rowPitch, data.frameNumber);
+    const char* write_data = pixels;
+    uint32_t final_width = data.dstWidth;
+    uint32_t final_height = data.dstHeight;
+    int rowPitch = srLayout.rowPitch;
+
+    bool is_90 = (data.preTransform == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ||
+                  data.preTransform == VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_90_BIT_KHR);
+    bool is_180 = (data.preTransform == VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR ||
+                   data.preTransform == VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_180_BIT_KHR);
+    bool is_270 = (data.preTransform == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR ||
+                   data.preTransform == VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_270_BIT_KHR);
+    bool is_mirrored = (data.preTransform == VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_BIT_KHR ||
+                        data.preTransform == VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_90_BIT_KHR ||
+                        data.preTransform == VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_180_BIT_KHR ||
+                        data.preTransform == VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_270_BIT_KHR);
+
+    if (settings.applyPrerotation && (is_90 || is_180 || is_270 || is_mirrored))
+    {
+        size_t pixel_count = static_cast<size_t>(data.dstWidth) * data.dstHeight;
+        data.rotatedPixelsBuffer.resize(pixel_count * data.dstNumChannels);
+        
+        const uint8_t* src_bytes = reinterpret_cast<const uint8_t*>(pixels);
+        uint8_t*       dst_bytes = data.rotatedPixelsBuffer.data();
+        write_data               = reinterpret_cast<const char*>(dst_bytes);
+                       
+        final_width  = (is_90 || is_270) ? data.dstHeight : data.dstWidth;
+        final_height = (is_90 || is_270) ? data.dstWidth : data.dstHeight;
+        rowPitch = final_width * data.dstNumChannels;
+                      
+        if (is_90) {
+            if (is_mirrored) {
+                RotateImagePixels<ImageRotation::DEG_90, /*mirrored=*/true>(src_bytes, dst_bytes, data.dstWidth, data.dstHeight, final_width, final_height, data.dstNumChannels, srLayout.rowPitch);
+            } else {
+                RotateImagePixels<ImageRotation::DEG_90>(src_bytes, dst_bytes, data.dstWidth, data.dstHeight, final_width, final_height, data.dstNumChannels, srLayout.rowPitch);
+            }
+        } else if (is_270) {
+            if (is_mirrored) {
+                RotateImagePixels<ImageRotation::DEG_270, /*mirrored=*/true>(src_bytes, dst_bytes, data.dstWidth, data.dstHeight, final_width, final_height, data.dstNumChannels, srLayout.rowPitch);
+            } else {
+                RotateImagePixels<ImageRotation::DEG_270>(src_bytes, dst_bytes, data.dstWidth, data.dstHeight, final_width, final_height, data.dstNumChannels, srLayout.rowPitch);
+            }
+        } else if (is_180) {
+            if (is_mirrored) {
+                RotateImagePixels<ImageRotation::DEG_180, /*mirrored=*/true>(src_bytes, dst_bytes, data.dstWidth, data.dstHeight, final_width, final_height, data.dstNumChannels, srLayout.rowPitch);
+            } else {
+                RotateImagePixels<ImageRotation::DEG_180>(src_bytes, dst_bytes, data.dstWidth, data.dstHeight, final_width, final_height, data.dstNumChannels, srLayout.rowPitch);
+            }
+        } else if (is_mirrored) {
+            RotateImagePixels<ImageRotation::DEG_0, /*mirrored=*/true>(src_bytes, dst_bytes, data.dstWidth, data.dstHeight, final_width, final_height, data.dstNumChannels, srLayout.rowPitch);
+        }
+    }
+
+    screenshotWriter->write(write_data, final_width, final_height, data.dstNumChannels, rowPitch, data.frameNumber);
 
     if (data.image3 == VK_NULL_HANDLE) {
         data.pTableDevice->UnmapMemory(data.device, data.mem2);
@@ -1584,6 +1702,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateSwapchainKHR(VkDevice device, const VkSwapc
     swapchainMap[*pSwapchain].device = device;
     swapchainMap[*pSwapchain].imageExtent = pCreateInfo->imageExtent;
     swapchainMap[*pSwapchain].format = pCreateInfo->imageFormat;
+    swapchainMap[*pSwapchain].preTransform = pCreateInfo->preTransform;
 
     uint32_t surfaceCount;
     VkResult getSwapchainImagesResult = pDisp->GetSwapchainImagesKHR(device, *pSwapchain, &surfaceCount, nullptr);
@@ -1792,6 +1911,7 @@ void onQueuePresentKHR(VkQueue queue, VkPresentInfoKHR& presentInfo) {
     } else {
         data = std::make_shared<ScreenshotQueueData>();
     }
+    data->preTransform = swapchainMap[swapchain].preTransform;
     if (queueScreenshot(*data, image, &presentInfo)) {
         presentInfo.pWaitSemaphores = &data->semaphore;
         presentInfo.waitSemaphoreCount = 1;
