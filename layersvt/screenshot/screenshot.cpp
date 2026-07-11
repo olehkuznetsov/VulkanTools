@@ -1868,9 +1868,11 @@ void onQueuePresentKHR(VkQueue queue, VkPresentInfoKHR& presentInfo) {
         return;
     }
 
-    if (std::atomic_load(&pauseCapture) && screenshotWriter->canControlPause()) {
-        // Wake up screenshot thread to check whether we should unpause screenshot recording
-        screenshotQueuedCV.notify_one();
+    if (std::atomic_load(&pauseCapture)) {
+        if (screenshotWriter && screenshotWriter->canControlPause()) {
+            // Wake up screenshot thread to check whether we should unpause screenshot recording
+            screenshotQueuedCV.notify_one();
+        }
         return;
     }
     if (presentInfo.swapchainCount == 0) {
