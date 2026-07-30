@@ -11,6 +11,7 @@ PERFETTO_DEFINE_CATEGORIES(
     perfetto::Category("VulkanCPUTiming/VkDevice").SetDescription("Device Level Commands"),
     perfetto::Category("VulkanCPUTiming/VkQueue").SetDescription("Queue Level Commands"),
     perfetto::Category("VulkanCPUTiming/VkCommandBuffer").SetDescription("Command Buffer Level Commands"),
+    perfetto::Category("VulkanCPUTiming/VkCmd").SetDescription("Recorded Commands"),
     perfetto::Category("VulkanCPUTiming/Other").SetDescription("Other Commands")
 );
 
@@ -23,6 +24,7 @@ enum class CPUTimingCategory {
     VkDevice,
     VkQueue,
     VkCommandBuffer,
+    VkCmd,
     Other
 };
 

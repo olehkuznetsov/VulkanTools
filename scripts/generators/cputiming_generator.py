@@ -72,6 +72,8 @@ def get_command_category(command: Command):
     elif first_param_type == 'VkQueue':
         return 'CPUTimingCategory::VkQueue'
     elif first_param_type == 'VkCommandBuffer':
+        if command.name.startswith('vkCmd') and not ('Begin' in command.name or 'End' in command.name):
+            return 'CPUTimingCategory::VkCmd'
         return 'CPUTimingCategory::VkCommandBuffer'
     else:
         return 'CPUTimingCategory::Other'

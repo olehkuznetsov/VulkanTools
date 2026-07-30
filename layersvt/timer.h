@@ -58,6 +58,10 @@ class Timer {
                 TRACE_EVENT_BEGIN("VulkanCPUTiming/VkCommandBuffer", perfetto::StaticString(name));
                 break;
             }
+            case CPUTimingCategory::VkCmd: {
+                TRACE_EVENT_BEGIN("VulkanCPUTiming/VkCmd", perfetto::StaticString(name));
+                break;
+            }
             default: {
                 TRACE_EVENT_BEGIN("VulkanCPUTiming/Other", perfetto::StaticString(name));
                 break;
@@ -87,6 +91,10 @@ class Timer {
                 TRACE_EVENT_END("VulkanCPUTiming/VkCommandBuffer");
                 break;
             }
+            case CPUTimingCategory::VkCmd: {
+                TRACE_EVENT_END("VulkanCPUTiming/VkCmd");
+                break;
+            }
             default: {
                 TRACE_EVENT_END("VulkanCPUTiming/Other");
                 break;
@@ -102,6 +110,7 @@ class Timer {
             case CPUTimingCategory::VkDevice: cat_str = "VulkanCPUTiming/VkDevice"; break;
             case CPUTimingCategory::VkQueue: cat_str = "VulkanCPUTiming/VkQueue"; break;
             case CPUTimingCategory::VkCommandBuffer: cat_str = "VulkanCPUTiming/VkCommandBuffer"; break;
+            case CPUTimingCategory::VkCmd: cat_str = "VulkanCPUTiming/VkCmd"; break;
             default: break;
         }
         std::cout << cat_str << " " << name_ << ": " << duration << " ns" << std::endl;
