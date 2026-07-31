@@ -33,6 +33,41 @@ To specify frames to be captured, the environment variable 'VK_SCREENSHOT_FRAMES
 ### View Frames Per Second
 layersvt/monitor.cpp - utility layer that will display an applications FPS in the title bar of a windowed application.
 
+### CPU Timing Profiling
+layersvt/cpu_timing/cputiming.cpp (name='VK_LAYER_GOOGLE_CPUTiming') - utility layer that intercepts API calls to measure and trace their execution time via Perfetto trace events. 
+
+It exposes the following Perfetto trace categories which can be individually filtered in your trace configuration:
+* `VulkanCPUTiming/VkInstance` - Instance setup / querying commands
+* `VulkanCPUTiming/VkPhysicalDevice` - Physical device querying commands
+* `VulkanCPUTiming/VkDevice` - Device management, resource creation, etc
+* `VulkanCPUTiming/VkQueue` - Queue submission and wait commands
+* `VulkanCPUTiming/VkCommandBuffer` - Command buffer lifecycle and scoped Begin/End commands (`vkBeginCommandBuffer`, `vkCmdBeginRenderPass`, `vkCmdEndQuery`, etc)
+* `VulkanCPUTiming/VkCmd` - All recorded GPU commands (`vkCmd...`)
+* `VulkanCPUTiming/Other` - All other un-categorized commands
+
+Here is an example Perfetto config that disables the high-frequency recorded commands (to reduce trace noise) but preserves command buffer management and queue submissions:
+```protobuf
+buffers {
+  size_kb: 63488
+  fill_policy: RING_BUFFER
+}
+data_sources {
+  config {
+    name: "track_event"
+    track_event_config {
+      disabled_categories: "*" 
+      enabled_categories: "VulkanCPUTiming/VkInstance"
+      enabled_categories: "VulkanCPUTiming/VkPhysicalDevice"
+      enabled_categories: "VulkanCPUTiming/VkDevice"
+      enabled_categories: "VulkanCPUTiming/VkQueue"
+      enabled_categories: "VulkanCPUTiming/VkCommandBuffer"
+      enabled_categories: "VulkanCPUTiming/Other"
+      # Purposefully leaving out "VulkanCPUTiming/VkCmd"
+    }
+  }
+}
+```
+
 ## Using Layers
 
 1. Build VK loader using normal steps (cmake and make)
