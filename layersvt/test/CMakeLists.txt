@@ -37,6 +37,9 @@ function(LayerTest NAME)
     if (${NAME} STREQUAL "DebugMarker")
         target_sources(${TEST_NAME} PRIVATE ../debug_marker/debug_marker.cpp ../debug_marker/debug_marker_perfetto.cpp ../perfetto/perfetto.cc)
         target_include_directories(${TEST_NAME} PRIVATE .. ../debug_marker)
+    elseif (${NAME} STREQUAL "DeviceMemoryReport")
+        target_sources(${TEST_NAME} PRIVATE ../device_memory_report/device_memory_report.cpp ../device_memory_report/device_memory_report_perfetto.cpp ../perfetto/perfetto.cc)
+        target_include_directories(${TEST_NAME} PRIVATE .. ../device_memory_report)
     endif()
     target_compile_definitions(${TEST_NAME} PUBLIC LAYER_BINARY_PATH="$<TARGET_FILE_DIR:VkLayer_${NAME}>")
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
@@ -48,7 +51,7 @@ function(LayerTest NAME)
     endif()
 endfunction()
 
-set(LAYER_TEST_FILES api_dump monitor screenshot CPUTiming DebugMarker)
+set(LAYER_TEST_FILES api_dump monitor screenshot CPUTiming DebugMarker DeviceMemoryReport)
 
 foreach(test_item ${LAYER_TEST_FILES})
     # If the target doesn't exist continue.

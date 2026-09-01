@@ -201,11 +201,47 @@ if(BUILD_DEBUGMARKER)
     target_compile_definitions(VkLayer_DebugMarker PRIVATE VK_ENABLE_BETA_EXTENSIONS)
 endif()
 
+if(BUILD_DEVICEMEMORYREPORT)
+    add_library(VkLayer_DeviceMemoryReport MODULE)
+    set_target_properties(VkLayer_DeviceMemoryReport PROPERTIES FOLDER "layers/devicememoryreport")
+    target_sources(VkLayer_DeviceMemoryReport PRIVATE
+        device_memory_report/device_memory_report_handwritten_dispatch.cpp
+        device_memory_report/device_memory_report_handwritten_functions.h
+        device_memory_report/device_memory_report.h
+        device_memory_report/device_memory_report.cpp
+        device_memory_report/device_memory_report_perfetto.h
+        device_memory_report/device_memory_report_perfetto.cpp
+        perfetto/perfetto.cc
+        vk_layer_table.cpp
+        vk_layer_table.h
+        layer_keep_alive.cpp
+        device_memory_report/VkLayer_DeviceMemoryReport.json.in
+    )
+
+    target_include_directories(VkLayer_DeviceMemoryReport PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/device_memory_report
+        ${CMAKE_CURRENT_BINARY_DIR}
+    )
+
+    if(CMAKE_SYSTEM_NAME MATCHES "Linux|BSD|DragonFly|GNU")
+        if (BUILD_WSI_XCB_SUPPORT)
+            target_compile_definitions(VkLayer_DeviceMemoryReport PRIVATE VK_USE_PLATFORM_XLIB_KHR)
+        endif()
+
+        if (BUILD_WSI_WAYLAND_SUPPORT)
+            target_compile_definitions(VkLayer_DeviceMemoryReport PRIVATE VK_USE_PLATFORM_WAYLAND_KHR)
+        endif()
+    endif()
+
+    target_compile_definitions(VkLayer_DeviceMemoryReport PRIVATE VK_ENABLE_BETA_EXTENSIONS)
+endif()
+
 if (BUILD_TESTS AND NOT RUN_ON_GITHUB)
     add_subdirectory(test)
 endif()
 
-list(APPEND TOOL_LAYERS "VkLayer_api_dump" "VkLayer_screenshot" "VkLayer_monitor" "VkLayer_CPUTiming" "VkLayer_DebugMarker")
+list(APPEND TOOL_LAYERS "VkLayer_api_dump" "VkLayer_screenshot" "VkLayer_monitor" "VkLayer_CPUTiming" "VkLayer_DebugMarker" "VkLayer_DeviceMemoryReport")
 foreach(layer ${TOOL_LAYERS})
     if (NOT TARGET "${layer}")
         continue()
@@ -217,6 +253,8 @@ foreach(layer ${TOOL_LAYERS})
         set(layer_dir "cpu_timing/")
     elseif(layer STREQUAL "VkLayer_screenshot")
         set(layer_dir "screenshot/")
+    elseif(layer STREQUAL "VkLayer_DeviceMemoryReport")
+        set(layer_dir "device_memory_report/")
     else()
         set(layer_dir "")
     endif()
@@ -265,6 +303,8 @@ foreach(layer ${TOOL_LAYERS})
         set(INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cpu_timing/${layer}.json.in")
     elseif(layer STREQUAL "VkLayer_screenshot")
         set(INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/screenshot/json/${layer}.json.in")
+    elseif(layer STREQUAL "VkLayer_DeviceMemoryReport")
+        set(INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/device_memory_report/${layer}.json.in")
     else()
         set(INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/json/${layer}.json.in")
     endif()
