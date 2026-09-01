@@ -45,6 +45,8 @@ else()
     add_compile_options(-Wpointer-arith)
 endif()
 
+add_subdirectory(common)
+
 if(BUILD_APIDUMP)
     find_package(Python3 REQUIRED)
 
@@ -103,6 +105,10 @@ if(BUILD_MONITOR)
         json/VkLayer_monitor.json.in
     )
 endif ()
+
+if (NOT MSVC)
+    set_source_files_properties(perfetto/perfetto.cc PROPERTIES COMPILE_OPTIONS "-Wno-deprecated-declarations")
+endif()
 
 if(BUILD_SCREENSHOT)
     add_library(VkLayer_screenshot MODULE)

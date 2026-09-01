@@ -18,6 +18,10 @@ if (ANDROID)
     return()
 endif()
 
+if (NOT MSVC)
+    set_source_files_properties(../perfetto/perfetto.cc PROPERTIES COMPILE_OPTIONS "-Wno-deprecated-declarations")
+endif()
+
 function(LayerTest NAME)
     string(TOLOWER ${NAME} LOWER_NAME)
     set(TEST_FILENAME ./test_${LOWER_NAME}.cpp)
@@ -61,3 +65,17 @@ foreach(test_item ${LAYER_TEST_FILES})
 
     LayerTest(${test_item})
 endforeach()
+
+add_executable(test_common_layer
+    test_common.cpp
+    layer_test_main.cpp
+)
+target_link_libraries(test_common_layer PRIVATE
+    layersvt_common
+    GTest::gtest
+    Vulkan::Headers
+    Vulkan::UtilityHeaders
+)
+add_test(NAME test_common_layer COMMAND test_common_layer)
+set_target_properties(test_common_layer PROPERTIES FOLDER "layers/common/Test")
+
