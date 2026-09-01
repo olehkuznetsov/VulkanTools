@@ -15,6 +15,9 @@
 
 name: ci
 
+permissions:
+  contents: read
+
 on:
   push:
   pull_request:
@@ -24,20 +27,20 @@ on:
 jobs:
   # Ensure we can build on an older Ubuntu distro with an older version of CMake.
   linux_back_compat:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     name: "Ubuntu Backcompat"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Install Qt
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4
         with:
-          version: '6.2.*'
+          version: '6.9.3'
       - name: Test Minimum CMake Version
-        uses: lukka/get-cmake@latest
+        uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # v4.4.2
         with:
           cmakeVersion: 3.22.1
-      - uses: hendrikmuhs/ccache-action@v1.2
+      - uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1.2
         with:
           key: linux_back_compat
       - run: sudo apt-get -qq update && sudo apt-get install -y libwayland-dev xorg-dev
@@ -55,11 +58,11 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     steps:
     - name: Install Qt
-      uses: jurplel/install-qt-action@v4
+      uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4
       with:
-        version: '6.8.3'
+        version: '6.9.3'
     - name: Clone repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
     - run: sudo apt-get -qq update && sudo apt-get install -y libwayland-dev xorg-dev
     - run: python3 -m pip install pyparsing
     - run: python3 scripts/github_ci_linux.py --config Debug --tests GitHubCI
@@ -69,12 +72,12 @@ jobs:
     runs-on: windows-latest
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     steps:
-      - uses: actions/checkout@v6
-      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - name: Install Qt
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4
         with:
-          version: '6.8.2'
+          version: '6.9.3'
       - run: cmake -S . -B build -D UPDATE_DEPS=ON -D BUILD_TESTS=ON -D RUN_ON_GITHUB=ON -D CMAKE_BUILD_TYPE=Debug -G Ninja
       - run: cmake --build build
       - run: ctest --output-on-failure --test-dir build --timeout 10
@@ -84,8 +87,8 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     steps:
-      - uses: actions/checkout@v6
-      - uses: lukka/get-cmake@latest
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # v4.4.2
       - name: Build
         run: |
           ANDROID_NDK_HOME=${ANDROID_NDK_LATEST_HOME} scripts/android.py \
@@ -93,7 +96,7 @@ jobs:
             --app-abi "arm64-v8a x86_64"
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: layers-${{ github.run_id }}
           path: build-android/install/**/*
@@ -103,12 +106,12 @@ jobs:
     runs-on: macos-latest
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Install Qt
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4
         with:
-          version: '6.8.2'
-      - uses: lukka/get-cmake@latest
+          version: '6.9.3'
+      - uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # v4.4.2
       - name: Configure
         run: |
           cmake -S . -B build/ \
@@ -124,11 +127,11 @@ jobs:
     runs-on: macos-latest
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     steps:
-        - uses: actions/checkout@v6
-        - uses: actions/setup-python@v6
+        - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
           with:
-            python-version: '3.10'
-        - uses: lukka/get-cmake@latest
+            python-version: '3.11'
+        - uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # v4.4.2
         - name: Generate build files
           run: |
             cmake -S . -B build \
@@ -153,15 +156,15 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1.2
         with:
           key: mingw-ccache
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: '3.10'
-      - uses: lukka/get-cmake@latest
+          python-version: '3.11'
+      - uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # v4.4.2
       - name: GCC Version
         run: gcc --version # If this fails MINGW is not setup correctly
       - name: Configure
@@ -178,6 +181,6 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - run: sudo apt-get -qq update && sudo apt-get install -y libwayland-dev xorg-dev
       - run: python scripts/gn/gn.py
