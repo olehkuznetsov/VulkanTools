@@ -15,23 +15,63 @@
 
 #include "debug_marker.h"
 #include "debug_marker_perfetto.h"
+#include "debug_marker_handwritten_functions_vk_ext_debug_marker.h"
+#include "debug_marker_handwritten_functions_vk_ext_debug_utils.h"
+#include "common/device_instance_tracker.h"
 #include "perfetto/perfetto.h"
+#include <cstring>
+
+const layersvt::LayerManifest& GetDebugMarkerManifest() {
+    static const layersvt::LayerManifest manifest(layersvt::LayerManifest::Config{
+        .layer_name = "VK_LAYER_GOOGLE_DebugMarker",
+        .description = "layer: DebugMarker",
+        .spec_version = VK_MAKE_VERSION(1, 4, VK_HEADER_VERSION),
+        .implementation_version = VK_MAKE_VERSION(0, 1, 0),
+        .instance_extensions =
+            {
+                {VK_EXT_DEBUG_UTILS_EXTENSION_NAME, VK_EXT_DEBUG_UTILS_SPEC_VERSION},
+            },
+        .device_extensions =
+            {
+                {VK_EXT_DEBUG_MARKER_EXTENSION_NAME, VK_EXT_DEBUG_MARKER_SPEC_VERSION},
+            },
+        .tool_properties = std::nullopt,
+    });
+    return manifest;
+}
+
+DebugMarker::DebugMarker() : LayerBase(&GetDebugMarkerManifest()) {}
 
 DebugMarker& DebugMarker::Get() {
     static DebugMarker instance;
     return instance;
 }
 
-void DebugMarker::SetVkInstance(VkPhysicalDevice phys_dev, VkInstance instance) {
+void DebugMarker::PreCreateInstance(VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator) {
+    (void)pCreateInfo;
+    (void)pAllocator;
+    static std::once_flag perfetto_initialization_flag;
+    std::call_once(perfetto_initialization_flag, []() { InitializeDebugMarkerPerfetto(); });
+}
+
+void DebugMarker::PostDestroyDevice(VkDevice device) {
     std::lock_guard<std::mutex> lock(mutex_);
-    vk_instance_map_[phys_dev] = instance;
+    uint64_t dev_handle = (uint64_t)device;
+    for (auto it = debug_object_names_.begin(); it != debug_object_names_.end();) {
+        if (it->second.vk_device == dev_handle) {
+            it = debug_object_names_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void DebugMarker::SetVkInstance(VkPhysicalDevice phys_dev, VkInstance instance) {
+    layersvt::DeviceInstanceTracker::Get().SetVkInstance(phys_dev, instance);
 }
 
 VkInstance DebugMarker::GetVkInstance(VkPhysicalDevice phys_dev) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = vk_instance_map_.find(phys_dev);
-    if (it != vk_instance_map_.end()) return it->second;
-    return VK_NULL_HANDLE;
+    return layersvt::DeviceInstanceTracker::Get().GetVkInstance(phys_dev);
 }
 
 void DebugMarker::SetDebugObjectName(uint64_t device, int32_t type, uint64_t handle, const char* name) {
@@ -74,8 +114,8 @@ void DebugMarker::EmitAllDebugMarkers() {
 
 void DebugMarker::Clear() {
     std::lock_guard<std::mutex> lock(mutex_);
-    vk_instance_map_.clear();
     debug_object_names_.clear();
+    layersvt::DeviceInstanceTracker::Get().Clear();
 }
 
 bool DebugMarker::HasDebugObjectName(int32_t type, uint64_t handle, const std::string& name) {
@@ -83,4 +123,35 @@ bool DebugMarker::HasDebugObjectName(int32_t type, uint64_t handle, const std::s
     auto it = debug_object_names_.find(std::make_pair(type, handle));
     if (it == debug_object_names_.end()) return false;
     return it->second.name == name;
+}
+
+PFN_vkVoidFunction DebugMarker::GetLayerSpecificInstanceFunction(const char* name) {
+    if (!name) return nullptr;
+    if (strcmp(name, "vkCreateDebugUtilsMessengerEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkCreateDebugUtilsMessengerEXT);
+    if (strcmp(name, "vkDestroyDebugUtilsMessengerEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkDestroyDebugUtilsMessengerEXT);
+    if (strcmp(name, "vkSubmitDebugUtilsMessageEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkSubmitDebugUtilsMessageEXT);
+    return nullptr;
+}
+
+PFN_vkVoidFunction DebugMarker::GetLayerSpecificDeviceFunction(const char* name) {
+    if (!name) return nullptr;
+
+    // VK_EXT_debug_marker
+    if (strcmp(name, "vkCmdDebugMarkerBeginEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkCmdDebugMarkerBeginEXT);
+    if (strcmp(name, "vkCmdDebugMarkerEndEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkCmdDebugMarkerEndEXT);
+    if (strcmp(name, "vkCmdDebugMarkerInsertEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkCmdDebugMarkerInsertEXT);
+    if (strcmp(name, "vkDebugMarkerSetObjectNameEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkDebugMarkerSetObjectNameEXT);
+    if (strcmp(name, "vkDebugMarkerSetObjectTagEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkDebugMarkerSetObjectTagEXT);
+
+    // VK_EXT_debug_utils
+    if (strcmp(name, "vkCmdBeginDebugUtilsLabelEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkCmdBeginDebugUtilsLabelEXT);
+    if (strcmp(name, "vkCmdEndDebugUtilsLabelEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkCmdEndDebugUtilsLabelEXT);
+    if (strcmp(name, "vkCmdInsertDebugUtilsLabelEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkCmdInsertDebugUtilsLabelEXT);
+    if (strcmp(name, "vkSetDebugUtilsObjectNameEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkSetDebugUtilsObjectNameEXT);
+    if (strcmp(name, "vkSetDebugUtilsObjectTagEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkSetDebugUtilsObjectTagEXT);
+    if (strcmp(name, "vkQueueBeginDebugUtilsLabelEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkQueueBeginDebugUtilsLabelEXT);
+    if (strcmp(name, "vkQueueEndDebugUtilsLabelEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkQueueEndDebugUtilsLabelEXT);
+    if (strcmp(name, "vkQueueInsertDebugUtilsLabelEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkQueueInsertDebugUtilsLabelEXT);
+
+    return nullptr;
 }

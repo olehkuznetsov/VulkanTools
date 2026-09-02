@@ -17,10 +17,12 @@
 
 #include <vulkan/vulkan.h>
 #include <mutex>
-#include <unordered_map>
 
 #include <map>
 #include <string>
+
+#include "common/layer_base.h"
+#include "common/layer_manifest.h"
 
 /**
  * The DebugMarker class is responsible for storing and managing debug marker
@@ -45,19 +47,28 @@
  * because a user might start another Perfetto session later, requiring us to emit
  * all object names again.
  *
- * A potential issue exists if an application constantly creates and destroys
- * objects without bound, as we currently do not remove names for destroyed objects.
- * Support for removing names on object destruction can be added later if needed.
- *
- * This class is a singleton and provides thread-safe access to its state.
+ * This class is a singleton, inherits from LayerBase, and provides thread-safe access to its state.
  */
-class DebugMarker {
+class DebugMarker : public layersvt::LayerBase {
    public:
     /**
      * @brief Returns the singleton instance of the DebugMarker class.
      * @return Reference to the DebugMarker singleton.
      */
     static DebugMarker& Get();
+
+    DebugMarker();
+    ~DebugMarker() override = default;
+
+    /**
+     * @brief Lifecycle hook called before vkCreateInstance.
+     */
+    void PreCreateInstance(VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator) override;
+
+    /**
+     * @brief Lifecycle hook called after vkDestroyDevice to remove tracked names for destroyed objects.
+     */
+    void PostDestroyDevice(VkDevice device) override;
 
     /**
      * @brief Sets or updates the name associated with a Vulkan object.
@@ -99,6 +110,9 @@ class DebugMarker {
      */
     VkInstance GetVkInstance(VkPhysicalDevice phys_dev);
 
+   protected:
+    PFN_vkVoidFunction GetLayerSpecificInstanceFunction(const char* name) override;
+    PFN_vkVoidFunction GetLayerSpecificDeviceFunction(const char* name) override;
 
    private:
     struct DebugObjectName {
@@ -114,12 +128,10 @@ class DebugMarker {
 
     std::mutex mutex_;
     /**
-     * @brief Maps a physical device handle to its corresponding Vulkan instance handle.
-     */
-    std::unordered_map<VkPhysicalDevice, VkInstance> vk_instance_map_;
-    /**
      * @brief Maps a pair of (object_type, object_handle) to its debug name information.
      * We use a pair as the key because handles are not guaranteed to be unique across different object types.
      */
     std::map<std::pair<int32_t, uint64_t>, DebugObjectName> debug_object_names_;
 };
+
+const layersvt::LayerManifest& GetDebugMarkerManifest();

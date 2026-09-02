@@ -16,7 +16,7 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
-#include "vk_layer_table.h"
+#include "common/dispatch_table_manager.h"
 #include "debug_marker.h"
 
 // This file contains handwritten functions for the VK_EXT_debug_marker extension.
@@ -77,41 +77,31 @@ extern "C" {
 
 // Required for VK_EXT_debug_marker
 VKAPI_ATTR void VKAPI_CALL vkCmdDebugMarkerBeginEXT(VkCommandBuffer commandBuffer, const VkDebugMarkerMarkerInfoEXT* pMarkerInfo) {
-    if (device_dispatch_table(commandBuffer)->CmdDebugMarkerBeginEXT) {
-        device_dispatch_table(commandBuffer)->CmdDebugMarkerBeginEXT(commandBuffer, pMarkerInfo);
-    }
+    layersvt::DispatchDownstream<&VkuDeviceDispatchTable::CmdDebugMarkerBeginEXT>(commandBuffer, pMarkerInfo);
 }
 
 // Required for VK_EXT_debug_marker
 VKAPI_ATTR void VKAPI_CALL vkCmdDebugMarkerEndEXT(VkCommandBuffer commandBuffer) {
-    if (device_dispatch_table(commandBuffer)->CmdDebugMarkerEndEXT) {
-        device_dispatch_table(commandBuffer)->CmdDebugMarkerEndEXT(commandBuffer);
-    }
+    layersvt::DispatchDownstream<&VkuDeviceDispatchTable::CmdDebugMarkerEndEXT>(commandBuffer);
 }
 
 // Required for VK_EXT_debug_marker
 VKAPI_ATTR void VKAPI_CALL vkCmdDebugMarkerInsertEXT(VkCommandBuffer commandBuffer, const VkDebugMarkerMarkerInfoEXT* pMarkerInfo) {
-    if (device_dispatch_table(commandBuffer)->CmdDebugMarkerInsertEXT) {
-        device_dispatch_table(commandBuffer)->CmdDebugMarkerInsertEXT(commandBuffer, pMarkerInfo);
-    }
+    layersvt::DispatchDownstream<&VkuDeviceDispatchTable::CmdDebugMarkerInsertEXT>(commandBuffer, pMarkerInfo);
 }
 
 // Required for VK_EXT_debug_marker. Tracks object name state.
 VKAPI_ATTR VkResult VKAPI_CALL vkDebugMarkerSetObjectNameEXT(VkDevice device, const VkDebugMarkerObjectNameInfoEXT* pNameInfo) {
-    DebugMarker::Get().SetDebugObjectName((uint64_t)device, (int32_t)getVkObjectType(pNameInfo->objectType), pNameInfo->object, pNameInfo->pObjectName);
-    if (device_dispatch_table(device)->DebugMarkerSetObjectNameEXT) {
-        VkResult result = device_dispatch_table(device)->DebugMarkerSetObjectNameEXT(device, pNameInfo);
-        return result;
+    if (pNameInfo) {
+        DebugMarker::Get().SetDebugObjectName((uint64_t)device, (int32_t)getVkObjectType(pNameInfo->objectType), pNameInfo->object, pNameInfo->pObjectName);
     }
-    return VK_SUCCESS;
+    return layersvt::DispatchDownstream<&VkuDeviceDispatchTable::DebugMarkerSetObjectNameEXT>(device, pNameInfo);
 }
 
 // Required for VK_EXT_debug_marker
 VKAPI_ATTR VkResult VKAPI_CALL vkDebugMarkerSetObjectTagEXT(VkDevice device, const VkDebugMarkerObjectTagInfoEXT* pTagInfo) {
-    if (device_dispatch_table(device)->DebugMarkerSetObjectTagEXT) {
-        return device_dispatch_table(device)->DebugMarkerSetObjectTagEXT(device, pTagInfo);
-    }
-    return VK_SUCCESS;
+    return layersvt::DispatchDownstream<&VkuDeviceDispatchTable::DebugMarkerSetObjectTagEXT>(device, pTagInfo);
 }
 
 } // extern "C"
+
