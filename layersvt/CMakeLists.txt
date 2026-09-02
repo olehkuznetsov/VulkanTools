@@ -169,8 +169,7 @@ if(BUILD_DEBUGMARKER)
     add_library(VkLayer_DebugMarker MODULE)
     set_target_properties(VkLayer_DebugMarker PROPERTIES FOLDER "layers/debugmarker")
     target_sources(VkLayer_DebugMarker PRIVATE
-        debug_marker/debug_marker_handwritten_dispatch.cpp
-        debug_marker/debug_marker_handwritten_functions.h
+        $<TARGET_OBJECTS:layersvt_entrypoints>
         debug_marker/debug_marker_handwritten_functions_vk_ext_debug_marker.h
         debug_marker/debug_marker_handwritten_functions_vk_ext_debug_utils.h
         debug_marker/debug_marker.h
@@ -178,9 +177,6 @@ if(BUILD_DEBUGMARKER)
         debug_marker/debug_marker_perfetto.h
         debug_marker/debug_marker_perfetto.cpp
         perfetto/perfetto.cc
-        vk_layer_table.cpp
-        vk_layer_table.h
-        common/layer_keep_alive.cpp
         debug_marker/VkLayer_DebugMarker.json.in
     )
 
@@ -189,6 +185,8 @@ if(BUILD_DEBUGMARKER)
         ${CMAKE_CURRENT_SOURCE_DIR}/debug_marker
         ${CMAKE_CURRENT_BINARY_DIR}
     )
+
+    target_link_libraries(VkLayer_DebugMarker PRIVATE layersvt_common)
 
     if(CMAKE_SYSTEM_NAME MATCHES "Linux|BSD|DragonFly|GNU")
         if (BUILD_WSI_XCB_SUPPORT)

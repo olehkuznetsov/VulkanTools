@@ -20,6 +20,7 @@
 
 #include <gtest/gtest.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 #include <array>
@@ -102,5 +103,4 @@ inline void ResetLayer(bool destroy = false) {
         detail::GetActiveLayerDeleter() = []() { test_instance.reset(); };
     }
 }
-
 }  // namespace layer_test
