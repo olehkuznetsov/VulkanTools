@@ -16,7 +16,7 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
-#include "vk_layer_table.h"
+#include "common/dispatch_downstream.h"
 #include "debug_marker.h"
 
 extern "C" {
@@ -24,88 +24,80 @@ extern "C" {
 // This file contains handwritten functions for the VK_EXT_debug_utils extension.
 // We only actively implement vkSetDebugUtilsObjectNameEXT to track object names for Perfetto traces.
 // All other functions are simple passthroughs required to be provided so that the layer
-// can claim full support for the extension.
+// can claim full support for the extension. Since the layer implements the extension itself,
+// the downstream may lack it, so passthroughs skip downstream dispatch when it is unavailable.
 
 // Required for VK_EXT_debug_utils
 VKAPI_ATTR void VKAPI_CALL vkCmdBeginDebugUtilsLabelEXT(VkCommandBuffer commandBuffer, const VkDebugUtilsLabelEXT* pLabelInfo) {
-    if (device_dispatch_table(commandBuffer)->CmdBeginDebugUtilsLabelEXT) {
-        device_dispatch_table(commandBuffer)->CmdBeginDebugUtilsLabelEXT(commandBuffer, pLabelInfo);
-    }
+    layersvt::DispatchDownstreamIfAvailable<&VkuDeviceDispatchTable::CmdBeginDebugUtilsLabelEXT>(commandBuffer, pLabelInfo);
 }
 
 // Required for VK_EXT_debug_utils
 VKAPI_ATTR void VKAPI_CALL vkCmdEndDebugUtilsLabelEXT(VkCommandBuffer commandBuffer) {
-    if (device_dispatch_table(commandBuffer)->CmdEndDebugUtilsLabelEXT) {
-        device_dispatch_table(commandBuffer)->CmdEndDebugUtilsLabelEXT(commandBuffer);
-    }
+    layersvt::DispatchDownstreamIfAvailable<&VkuDeviceDispatchTable::CmdEndDebugUtilsLabelEXT>(commandBuffer);
 }
 
 // Required for VK_EXT_debug_utils
 VKAPI_ATTR void VKAPI_CALL vkCmdInsertDebugUtilsLabelEXT(VkCommandBuffer commandBuffer, const VkDebugUtilsLabelEXT* pLabelInfo) {
-    if (device_dispatch_table(commandBuffer)->CmdInsertDebugUtilsLabelEXT) {
-        device_dispatch_table(commandBuffer)->CmdInsertDebugUtilsLabelEXT(commandBuffer, pLabelInfo);
-    }
+    layersvt::DispatchDownstreamIfAvailable<&VkuDeviceDispatchTable::CmdInsertDebugUtilsLabelEXT>(commandBuffer, pLabelInfo);
 }
 
 // Required for VK_EXT_debug_utils. Tracks object name state.
 VKAPI_ATTR VkResult VKAPI_CALL vkSetDebugUtilsObjectNameEXT(VkDevice device, const VkDebugUtilsObjectNameInfoEXT* pNameInfo) {
-    DebugMarker::Get().SetDebugObjectName((uint64_t)device, (int32_t)pNameInfo->objectType, pNameInfo->objectHandle, pNameInfo->pObjectName);
-    if (device_dispatch_table(device)->SetDebugUtilsObjectNameEXT) {
-        VkResult result = device_dispatch_table(device)->SetDebugUtilsObjectNameEXT(device, pNameInfo);
-        return result;
+    if (pNameInfo) {
+        DebugMarker::Get().SetDebugObjectName((uint64_t)device, (int32_t)pNameInfo->objectType, pNameInfo->objectHandle,
+                                              pNameInfo->pObjectName);
     }
-    return VK_SUCCESS;
+    return layersvt::DispatchDownstreamOrSuccess<&VkuDeviceDispatchTable::SetDebugUtilsObjectNameEXT>(device, pNameInfo);
 }
 
 // Required for VK_EXT_debug_utils
 VKAPI_ATTR VkResult VKAPI_CALL vkSetDebugUtilsObjectTagEXT(VkDevice device, const VkDebugUtilsObjectTagInfoEXT* pTagInfo) {
-    if (device_dispatch_table(device)->SetDebugUtilsObjectTagEXT) {
-        return device_dispatch_table(device)->SetDebugUtilsObjectTagEXT(device, pTagInfo);
-    }
-    return VK_SUCCESS;
+    return layersvt::DispatchDownstreamOrSuccess<&VkuDeviceDispatchTable::SetDebugUtilsObjectTagEXT>(device, pTagInfo);
 }
 
 // Required for VK_EXT_debug_utils
 VKAPI_ATTR void VKAPI_CALL vkQueueBeginDebugUtilsLabelEXT(VkQueue queue, const VkDebugUtilsLabelEXT* pLabelInfo) {
-    if (device_dispatch_table(queue)->QueueBeginDebugUtilsLabelEXT) {
-        device_dispatch_table(queue)->QueueBeginDebugUtilsLabelEXT(queue, pLabelInfo);
-    }
+    layersvt::DispatchDownstreamIfAvailable<&VkuDeviceDispatchTable::QueueBeginDebugUtilsLabelEXT>(queue, pLabelInfo);
 }
 
 // Required for VK_EXT_debug_utils
 VKAPI_ATTR void VKAPI_CALL vkQueueEndDebugUtilsLabelEXT(VkQueue queue) {
-    if (device_dispatch_table(queue)->QueueEndDebugUtilsLabelEXT) {
-        device_dispatch_table(queue)->QueueEndDebugUtilsLabelEXT(queue);
-    }
+    layersvt::DispatchDownstreamIfAvailable<&VkuDeviceDispatchTable::QueueEndDebugUtilsLabelEXT>(queue);
 }
 
 // Passthrough required for VK_EXT_debug_utils
 VKAPI_ATTR void VKAPI_CALL vkQueueInsertDebugUtilsLabelEXT(VkQueue queue, const VkDebugUtilsLabelEXT* pLabelInfo) {
-    if (device_dispatch_table(queue)->QueueInsertDebugUtilsLabelEXT) {
-        device_dispatch_table(queue)->QueueInsertDebugUtilsLabelEXT(queue, pLabelInfo);
-    }
+    layersvt::DispatchDownstreamIfAvailable<&VkuDeviceDispatchTable::QueueInsertDebugUtilsLabelEXT>(queue, pLabelInfo);
+}
+
+// Passthrough required for VK_EXT_debug_utils. If the downstream lacks the extension, no messenger
+// is created and VK_NULL_HANDLE is returned so that the output handle is never left uninitialized.
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateDebugUtilsMessengerEXT(VkInstance instance,
+                                                              const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
+                                                              const VkAllocationCallbacks* pAllocator,
+                                                              VkDebugUtilsMessengerEXT* pMessenger) {
+    return layersvt::DispatchDownstreamOr<&VkuInstanceDispatchTable::CreateDebugUtilsMessengerEXT>(
+        [pMessenger] {
+            *pMessenger = VK_NULL_HANDLE;
+            return VK_SUCCESS;
+        },
+        instance, pCreateInfo, pAllocator, pMessenger);
 }
 
 // Passthrough required for VK_EXT_debug_utils
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pMessenger) {
-    if (instance_dispatch_table(instance)->CreateDebugUtilsMessengerEXT) {
-        return instance_dispatch_table(instance)->CreateDebugUtilsMessengerEXT(instance, pCreateInfo, pAllocator, pMessenger);
-    }
-    return VK_SUCCESS;
+VKAPI_ATTR void VKAPI_CALL vkDestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT messenger,
+                                                           const VkAllocationCallbacks* pAllocator) {
+    layersvt::DispatchDownstreamIfAvailable<&VkuInstanceDispatchTable::DestroyDebugUtilsMessengerEXT>(instance, messenger,
+                                                                                                      pAllocator);
 }
 
 // Passthrough required for VK_EXT_debug_utils
-VKAPI_ATTR void VKAPI_CALL vkDestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT messenger, const VkAllocationCallbacks* pAllocator) {
-    if (instance_dispatch_table(instance)->DestroyDebugUtilsMessengerEXT) {
-        instance_dispatch_table(instance)->DestroyDebugUtilsMessengerEXT(instance, messenger, pAllocator);
-    }
+VKAPI_ATTR void VKAPI_CALL vkSubmitDebugUtilsMessageEXT(VkInstance instance, VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                                                        VkDebugUtilsMessageTypeFlagsEXT messageTypes,
+                                                        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData) {
+    layersvt::DispatchDownstreamIfAvailable<&VkuInstanceDispatchTable::SubmitDebugUtilsMessageEXT>(instance, messageSeverity,
+                                                                                                   messageTypes, pCallbackData);
 }
 
-// Passthrough required for VK_EXT_debug_utils
-VKAPI_ATTR void VKAPI_CALL vkSubmitDebugUtilsMessageEXT(VkInstance instance, VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData) {
-    if (instance_dispatch_table(instance)->SubmitDebugUtilsMessageEXT) {
-        instance_dispatch_table(instance)->SubmitDebugUtilsMessageEXT(instance, messageSeverity, messageTypes, pCallbackData);
-    }
-}
-
-} // extern "C"
+}  // extern "C"
