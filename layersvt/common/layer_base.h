@@ -16,6 +16,7 @@
 #pragma once
 
 #include "dispatch_table_manager.h"
+#include <vulkan/vk_layer.h>
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <cstdint>
@@ -165,6 +166,18 @@ class LayerBase {
     DispatchTableManager dispatch_table_manager_;
 
     static inline LayerBase* layer_ = nullptr;
+
+    // Exported Vulkan layer entry points (implemented in layer_entrypoints.cpp)
+    friend VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL (::vkGetInstanceProcAddr)(VkInstance instance, const char* command_name);
+    friend VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL (::vkGetDeviceProcAddr)(VkDevice device, const char* command_name);
+    friend VKAPI_ATTR VkResult VKAPI_CALL (::vkEnumerateInstanceLayerProperties)(uint32_t* property_count, VkLayerProperties* properties);
+    friend VKAPI_ATTR VkResult VKAPI_CALL (::vkEnumerateInstanceExtensionProperties)(const char* layer_name, uint32_t* property_count,
+                                                                                  VkExtensionProperties* properties);
+    friend VKAPI_ATTR VkResult VKAPI_CALL (::vkEnumerateDeviceLayerProperties)(VkPhysicalDevice physical_device, uint32_t* property_count,
+                                                                              VkLayerProperties* properties);
+    friend VKAPI_ATTR VkResult VKAPI_CALL (::vkEnumerateDeviceExtensionProperties)(VkPhysicalDevice physical_device, const char* layer_name,
+                                                                                  uint32_t* property_count,
+                                                                                  VkExtensionProperties* properties);
 
     friend class LayerBaseTestPeer;
 

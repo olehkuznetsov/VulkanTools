@@ -41,3 +41,15 @@ if (ANDROID)
     )
     target_link_libraries(layersvt_common PUBLIC ${CMAKE_DL_LIBS})
 endif()
+
+add_library(layersvt_entrypoints OBJECT
+    layer_entrypoints.cpp
+)
+
+set_target_properties(layersvt_entrypoints PROPERTIES
+    FOLDER "layers/common"
+)
+
+target_link_libraries(layersvt_entrypoints PRIVATE
+    layersvt_common
+)
