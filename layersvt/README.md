@@ -22,6 +22,7 @@ Layers are activated at vkCreateInstance time.  Layers can also be activated via
 Note that some layers are code-generated and will therefore exist in the directory (build_dir)/layers
 
 -include/vkLayer.h  - header file for layer code.
+- [common/README.md](common/README.md) - Common layer foundation library (`layersvt_common`) and guide for creating new layers.
 
 ### Print API Calls and Parameter Values
 (build dir)/layers/api_dump.cpp (name=VK_LAYER_LUNARG_api_dump) - print out API calls along with parameter values
