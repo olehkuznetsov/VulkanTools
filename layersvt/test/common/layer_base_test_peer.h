@@ -39,6 +39,29 @@ class LayerBaseTestPeer {
         LayerBase::DestroyDevice(device, allocator);
     }
 
+    static VkResult EnumerateInstanceExtensionProperties(const char* layer_name, uint32_t* property_count,
+                                                         VkExtensionProperties* properties) {
+        return LayerBase::EnumerateInstanceExtensionProperties(layer_name, property_count, properties);
+    }
+    static VkResult EnumerateInstanceLayerProperties(uint32_t* property_count, VkLayerProperties* properties) {
+        return LayerBase::EnumerateInstanceLayerProperties(property_count, properties);
+    }
+    static VkResult EnumerateDeviceLayerProperties(VkPhysicalDevice physical_device, uint32_t* property_count,
+                                                   VkLayerProperties* properties) {
+        return LayerBase::EnumerateDeviceLayerProperties(physical_device, property_count, properties);
+    }
+    static VkResult EnumerateDeviceExtensionProperties(
+        VkPhysicalDevice physical_device, const char* layer_name, uint32_t* property_count,
+        VkExtensionProperties* properties,
+        PFN_vkEnumerateDeviceExtensionProperties downstream_function = nullptr) {
+        if (downstream_function != nullptr) {
+            return LayerBase::EnumerateDeviceExtensionPropertiesWithDownstream(
+                physical_device, layer_name, property_count, properties, downstream_function);
+        }
+        return LayerBase::EnumerateDeviceExtensionProperties(
+            physical_device, layer_name, property_count, properties);
+    }
+    static const LayerManifest* GetLayerManifest(const LayerBase& layer) { return layer.GetLayerManifest(); }
     static DispatchTableManager& GetDispatchTableManager(LayerBase& layer) { return layer.GetDispatchTableManager(); }
     static const DispatchTableManager& GetDispatchTableManager(const LayerBase& layer) { return layer.GetDispatchTableManager(); }
 

@@ -17,10 +17,12 @@
 
 #include "dispatch_table_manager.h"
 #include <vulkan/vulkan.h>
+#include <vector>
 #include <cstdint>
 
 namespace layersvt {
 
+struct LayerManifest;
 class LayerBaseTestPeer;
 
 class LayerBase {
@@ -53,6 +55,27 @@ class LayerBase {
     [[nodiscard]] static PFN_vkSetDeviceLoaderData GetDeviceLoaderDataCallback(VkDevice device);
 
    protected:
+    /**
+     * Override to provide the layer's metadata, supported extensions, and tool properties.
+     * Enables automatic handling of layer and extension property enumeration queries.
+     * Returns the layer's LayerManifest, or nullptr if none is configured.
+     */
+    [[nodiscard]] virtual const LayerManifest* GetLayerManifest() const { return nullptr; }
+
+    // Extension and tooling hooks
+
+    /**
+     * Customizes or filters instance extensions during vkEnumerateInstanceExtensionProperties.
+     */
+    virtual void ProcessInstanceExtensions(const char* layer_name,
+                                           std::vector<VkExtensionProperties>& extensions) const;
+
+    /**
+     * Customizes or filters device extensions during vkEnumerateDeviceExtensionProperties.
+     */
+    virtual void ProcessDeviceExtensions(VkPhysicalDevice physical_device, const char* layer_name,
+                                         std::vector<VkExtensionProperties>& extensions) const;
+
     // Layer-specific command intercepts
 
     /**
@@ -162,6 +185,16 @@ class LayerBase {
                                             const VkAllocationCallbacks* allocator, VkDevice* device);
     static void VKAPI_CALL DestroyDevice(VkDevice device, const VkAllocationCallbacks* allocator);
 
+    static VkResult VKAPI_CALL EnumerateInstanceExtensionProperties(const char* layer_name, uint32_t* property_count,
+                                                                    VkExtensionProperties* properties);
+    static VkResult VKAPI_CALL EnumerateInstanceLayerProperties(uint32_t* property_count, VkLayerProperties* properties);
+    static VkResult VKAPI_CALL EnumerateDeviceLayerProperties(VkPhysicalDevice physical_device, uint32_t* property_count,
+                                                              VkLayerProperties* properties);
+    static VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(VkPhysicalDevice physical_device, const char* layer_name,
+                                                                  uint32_t* property_count, VkExtensionProperties* properties);
+    static VkResult EnumerateDeviceExtensionPropertiesWithDownstream(
+        VkPhysicalDevice physical_device, const char* layer_name, uint32_t* property_count,
+        VkExtensionProperties* properties, PFN_vkEnumerateDeviceExtensionProperties downstream_function);
     static PFN_vkVoidFunction GetKnownInstanceCommand(VkInstance instance, const char* command_name);
     static PFN_vkVoidFunction GetKnownDeviceCommand(VkDevice device, const char* command_name);
 };
