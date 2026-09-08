@@ -27,10 +27,11 @@
 namespace layersvt {
 
 /**
- * Thread-safe manager for Vulkan instance and device dispatch tables.
+ * Thread-safe manager for Vulkan instance and device dispatch tables and physical device tracking.
  *
- * Also tracks the loader data callback (VK_LOADER_DATA_CALLBACK) to allow
- * layers to initialize dispatchable objects created internally.
+ * Manages dispatch tables keyed by handle dispatch key, maintains associations between
+ * physical devices and parent instances, and tracks loader data callbacks
+ * (VK_LOADER_DATA_CALLBACK) to initialize dispatchable objects created internally.
  */
 class DispatchTableManager final {
    public:
@@ -48,7 +49,7 @@ class DispatchTableManager final {
     }
 
     // Instance dispatch tables
- 
+
     /**
      * Initializes and stores an instance dispatch table using downstream vkGetInstanceProcAddr.
      * Returns a non-null pointer to the stored dispatch table.
@@ -56,17 +57,48 @@ class DispatchTableManager final {
     VkuInstanceDispatchTable* InitInstanceTable(VkInstance instance, PFN_vkGetInstanceProcAddr get_instance_proc_addr);
 
     /**
-     * Looks up the instance dispatch table for a dispatchable instance.
+     * Looks up the instance dispatch table for a given instance handle.
      * Returns a pointer to the stored table on success, or nullptr if not registered.
      */
     [[nodiscard]] VkuInstanceDispatchTable* GetInstanceDispatchTable(VkInstance instance) const;
 
     /**
-     * Destroys the instance dispatch table for the given dispatch key.
+     * Looks up the instance dispatch table for a given physical device handle.
+     * Resolves the parent instance and returns a pointer to its dispatch table on success, or nullptr if unregistered.
+     */
+    [[nodiscard]] VkuInstanceDispatchTable* GetInstanceDispatchTable(VkPhysicalDevice physical_device) const;
+
+    /**
+     * Overload for nullptr literal to resolve ambiguity between handle types. Always returns nullptr.
+     */
+    [[nodiscard]] VkuInstanceDispatchTable* GetInstanceDispatchTable(std::nullptr_t) const noexcept {
+        return nullptr;
+    }
+
+    /**
+     * Destroys the instance dispatch table and unmaps associated physical devices for the given dispatch key.
      * Callers should capture the Key beforehand via GetDispatchKey(...) before
      * downstream vkDestroyInstance invalidates the handle.
      */
     void DestroyInstanceTable(Key key);
+
+    // Physical device tracking
+
+    /**
+     * Associates a physical device handle with its parent VkInstance.
+     */
+    void SetVkInstance(VkPhysicalDevice physical_device, VkInstance instance);
+
+    /**
+     * Associates multiple physical device handles with their parent VkInstance in a single atomic lock.
+     */
+    void RegisterPhysicalDevices(const VkPhysicalDevice* physical_devices, uint32_t count, VkInstance instance);
+
+    /**
+     * Retrieves the VkInstance associated with a physical device.
+     * Returns the parent VkInstance on success, or VK_NULL_HANDLE if not registered.
+     */
+    [[nodiscard]] VkInstance GetVkInstance(VkPhysicalDevice physical_device) const;
 
     // Device dispatch tables
 
@@ -78,7 +110,7 @@ class DispatchTableManager final {
 
     /**
      * Looks up the device dispatch table for a dispatchable object.
-     * Returns a pointer to the stored table on success, or nullptr if not registered.
+     * Returns a pointer to the stored table on success, or nullptr if object is null or unregistered.
      */
     [[nodiscard]] VkuDeviceDispatchTable* GetDeviceDispatchTable(const void* object) const;
 
@@ -108,15 +140,14 @@ class DispatchTableManager final {
     DispatchTableManager(DispatchTableManager&&) = delete;
     DispatchTableManager& operator=(DispatchTableManager&&) = delete;
 
-    // Note on concurrency: Dispatch table lookups perform very fast hash map lookups.
-    // std::mutex is intentionally preferred over std::shared_mutex because the atomic
-    // increment/decrement operations and cacheline bouncing of shared reader locks
-    // (std::shared_lock) introduce more overhead than short, uncontended mutex acquisitions.
     mutable std::mutex instance_mutex_;
     std::unordered_map<Key, std::unique_ptr<VkuInstanceDispatchTable>> instance_tables_;
+    std::unordered_map<Key, VkInstance> instance_keys_;
+    std::unordered_map<VkPhysicalDevice, VkInstance> physical_device_to_instance_map_;
 
     mutable std::mutex device_mutex_;
     std::unordered_map<Key, std::unique_ptr<VkuDeviceDispatchTable>> device_tables_;
     std::unordered_map<Key, PFN_vkSetDeviceLoaderData> loader_callbacks_;
 };
+
 }  // namespace layersvt

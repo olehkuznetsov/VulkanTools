@@ -14,7 +14,10 @@
  */
 
 #include "dispatch_table_manager.h"
+#include <algorithm>
+#include <cassert>
 #include <mutex>
+#include <vector>
 
 namespace layersvt {
 
@@ -28,11 +31,14 @@ VkuInstanceDispatchTable* DispatchTableManager::InitInstanceTable(VkInstance ins
     Key key = GetDispatchKey(instance);
     std::lock_guard<std::mutex> lock(instance_mutex_);
     auto [iterator, inserted] = instance_tables_.try_emplace(key, std::move(table));
+    instance_keys_[key] = instance;
     return iterator->second.get();
 }
 
 VkuInstanceDispatchTable* DispatchTableManager::GetInstanceDispatchTable(VkInstance instance) const {
-    assert(instance != VK_NULL_HANDLE);
+    if (instance == VK_NULL_HANDLE) {
+        return nullptr;
+    }
     Key key = GetDispatchKey(instance);
     std::lock_guard<std::mutex> lock(instance_mutex_);
     auto table_iterator = instance_tables_.find(key);
@@ -42,10 +48,65 @@ VkuInstanceDispatchTable* DispatchTableManager::GetInstanceDispatchTable(VkInsta
     return nullptr;
 }
 
+VkuInstanceDispatchTable* DispatchTableManager::GetInstanceDispatchTable(VkPhysicalDevice physical_device) const {
+    if (physical_device == VK_NULL_HANDLE) {
+        return nullptr;
+    }
+    std::lock_guard<std::mutex> lock(instance_mutex_);
+    auto device_iterator = physical_device_to_instance_map_.find(physical_device);
+    if (device_iterator != physical_device_to_instance_map_.end()) {
+        Key instance_key = GetDispatchKey(device_iterator->second);
+        auto table_iterator = instance_tables_.find(instance_key);
+        if (table_iterator != instance_tables_.end()) {
+            return table_iterator->second.get();
+        }
+    }
+    return nullptr;
+}
+
 void DispatchTableManager::DestroyInstanceTable(Key key) {
     assert(key != Key{});
     std::lock_guard<std::mutex> lock(instance_mutex_);
+    auto key_iterator = instance_keys_.find(key);
+    if (key_iterator != instance_keys_.end()) {
+        VkInstance instance = key_iterator->second;
+        std::erase_if(physical_device_to_instance_map_,
+                      [instance](const auto& entry) { return entry.second == instance; });
+        instance_keys_.erase(key_iterator);
+    }
     instance_tables_.erase(key);
+}
+
+void DispatchTableManager::SetVkInstance(VkPhysicalDevice physical_device, VkInstance instance) {
+    assert(physical_device != VK_NULL_HANDLE);
+    assert(instance != VK_NULL_HANDLE);
+    std::lock_guard<std::mutex> lock(instance_mutex_);
+    physical_device_to_instance_map_[physical_device] = instance;
+}
+
+void DispatchTableManager::RegisterPhysicalDevices(const VkPhysicalDevice* physical_devices, uint32_t count,
+                                                   VkInstance instance) {
+    if (physical_devices == nullptr || count == 0) {
+        return;
+    }
+    assert(instance != VK_NULL_HANDLE);
+    std::lock_guard<std::mutex> lock(instance_mutex_);
+    for (uint32_t i = 0; i < count; ++i) {
+        assert(physical_devices[i] != VK_NULL_HANDLE);
+        physical_device_to_instance_map_[physical_devices[i]] = instance;
+    }
+}
+
+VkInstance DispatchTableManager::GetVkInstance(VkPhysicalDevice physical_device) const {
+    if (physical_device == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    std::lock_guard<std::mutex> lock(instance_mutex_);
+    auto device_iterator = physical_device_to_instance_map_.find(physical_device);
+    if (device_iterator != physical_device_to_instance_map_.end()) {
+        return device_iterator->second;
+    }
+    return VK_NULL_HANDLE;
 }
 
 VkuDeviceDispatchTable* DispatchTableManager::InitDeviceTable(VkDevice device, PFN_vkGetDeviceProcAddr get_device_proc_addr) {
@@ -61,6 +122,9 @@ VkuDeviceDispatchTable* DispatchTableManager::InitDeviceTable(VkDevice device, P
 }
 
 VkuDeviceDispatchTable* DispatchTableManager::GetDeviceDispatchTable(const void* object) const {
+    if (object == nullptr) {
+        return nullptr;
+    }
     Key key = GetDispatchKey(object);
     std::lock_guard<std::mutex> lock(device_mutex_);
     auto table_iterator = device_tables_.find(key);
