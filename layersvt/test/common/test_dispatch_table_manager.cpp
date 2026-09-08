@@ -16,6 +16,7 @@
 #include "common/dispatch_table_manager.h"
 #include <gtest/gtest.h>
 #include <atomic>
+#include <cstring>
 #include <thread>
 #include <vector>
 
@@ -155,4 +156,62 @@ TEST(DispatchTableManagerTest, ConcurrentAccess) {
     for (auto& thread : threads) {
         thread.join();
     }
+}
+
+TEST(DispatchTableManagerTest, PhysicalDeviceResolvesInstanceViaDispatchKey) {
+    DispatchTableManager dispatch_table_manager;
+
+    void* mock_instance_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0x1111));
+    auto mock_instance = reinterpret_cast<VkInstance>(&mock_instance_vtable);
+    // Loader ABI: physical devices share the dispatch key of their parent instance.
+    void* mock_physical_device_object1 = mock_instance_vtable;
+    void* mock_physical_device_object2 = mock_instance_vtable;
+    auto mock_physical_device1 = reinterpret_cast<VkPhysicalDevice>(&mock_physical_device_object1);
+    auto mock_physical_device2 = reinterpret_cast<VkPhysicalDevice>(&mock_physical_device_object2);
+
+    EXPECT_EQ(dispatch_table_manager.GetInstanceDispatchTable(mock_physical_device1), nullptr);
+    EXPECT_EQ(dispatch_table_manager.GetVkInstance(mock_physical_device1), VK_NULL_HANDLE);
+
+    auto* instance_table = dispatch_table_manager.InitInstanceTable(
+        mock_instance, [](VkInstance, const char*) -> PFN_vkVoidFunction { return nullptr; });
+    ASSERT_NE(instance_table, nullptr);
+
+    EXPECT_EQ(dispatch_table_manager.GetInstanceDispatchTable(mock_physical_device1), instance_table);
+    EXPECT_EQ(dispatch_table_manager.GetInstanceDispatchTable(mock_physical_device2), instance_table);
+    EXPECT_EQ(dispatch_table_manager.GetVkInstance(mock_physical_device1), mock_instance);
+    EXPECT_EQ(dispatch_table_manager.GetVkInstance(mock_physical_device2), mock_instance);
+
+    // A physical device with a different dispatch key does not resolve.
+    void* other_physical_device_object = reinterpret_cast<void*>(static_cast<uintptr_t>(0x2222));
+    auto other_physical_device = reinterpret_cast<VkPhysicalDevice>(&other_physical_device_object);
+    EXPECT_EQ(dispatch_table_manager.GetInstanceDispatchTable(other_physical_device), nullptr);
+    EXPECT_EQ(dispatch_table_manager.GetVkInstance(other_physical_device), VK_NULL_HANDLE);
+}
+
+TEST(DispatchTableManagerTest, PhysicalDeviceUnresolvedAfterInstanceDestroy) {
+    DispatchTableManager dispatch_table_manager;
+
+    void* mock_instance_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0x1111));
+    auto mock_instance = reinterpret_cast<VkInstance>(&mock_instance_vtable);
+    void* mock_physical_device_object = mock_instance_vtable;
+    auto mock_physical_device = reinterpret_cast<VkPhysicalDevice>(&mock_physical_device_object);
+
+    dispatch_table_manager.InitInstanceTable(mock_instance, [](VkInstance, const char*) -> PFN_vkVoidFunction { return nullptr; });
+    ASSERT_EQ(dispatch_table_manager.GetVkInstance(mock_physical_device), mock_instance);
+
+    dispatch_table_manager.DestroyInstanceTable(DispatchTableManager::GetDispatchKey(mock_instance));
+
+    EXPECT_EQ(dispatch_table_manager.GetInstanceDispatchTable(mock_instance), nullptr);
+    EXPECT_EQ(dispatch_table_manager.GetInstanceDispatchTable(mock_physical_device), nullptr);
+    EXPECT_EQ(dispatch_table_manager.GetVkInstance(mock_physical_device), VK_NULL_HANDLE);
+}
+
+TEST(DispatchTableManagerTest, NullHandleSafety) {
+    DispatchTableManager dispatch_table_manager;
+
+    EXPECT_EQ(dispatch_table_manager.GetVkInstance(VK_NULL_HANDLE), VK_NULL_HANDLE);
+    EXPECT_EQ(dispatch_table_manager.GetInstanceDispatchTable(static_cast<VkInstance>(VK_NULL_HANDLE)), nullptr);
+    EXPECT_EQ(dispatch_table_manager.GetInstanceDispatchTable(static_cast<VkPhysicalDevice>(VK_NULL_HANDLE)), nullptr);
+    EXPECT_EQ(dispatch_table_manager.GetInstanceDispatchTable(nullptr), nullptr);
+    EXPECT_EQ(dispatch_table_manager.GetDeviceDispatchTable(static_cast<const void*>(nullptr)), nullptr);
 }

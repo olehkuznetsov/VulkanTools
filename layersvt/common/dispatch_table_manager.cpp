@@ -14,6 +14,7 @@
  */
 
 #include "dispatch_table_manager.h"
+#include <cassert>
 #include <mutex>
 
 namespace layersvt {
@@ -28,12 +29,30 @@ VkuInstanceDispatchTable* DispatchTableManager::InitInstanceTable(VkInstance ins
     Key key = GetDispatchKey(instance);
     std::lock_guard<std::mutex> lock(instance_mutex_);
     auto [iterator, inserted] = instance_tables_.try_emplace(key, std::move(table));
+    instance_keys_[key] = instance;
     return iterator->second.get();
 }
 
 VkuInstanceDispatchTable* DispatchTableManager::GetInstanceDispatchTable(VkInstance instance) const {
-    assert(instance != VK_NULL_HANDLE);
+    if (instance == VK_NULL_HANDLE) {
+        return nullptr;
+    }
     Key key = GetDispatchKey(instance);
+    std::lock_guard<std::mutex> lock(instance_mutex_);
+    auto table_iterator = instance_tables_.find(key);
+    if (table_iterator != instance_tables_.end()) {
+        return table_iterator->second.get();
+    }
+    return nullptr;
+}
+
+// A VkPhysicalDevice shares the dispatch key of its parent VkInstance (loader ABI), so the
+// instance tables can be looked up directly with the physical device's dispatch key.
+VkuInstanceDispatchTable* DispatchTableManager::GetInstanceDispatchTable(VkPhysicalDevice physical_device) const {
+    if (physical_device == VK_NULL_HANDLE) {
+        return nullptr;
+    }
+    Key key = GetDispatchKey(physical_device);
     std::lock_guard<std::mutex> lock(instance_mutex_);
     auto table_iterator = instance_tables_.find(key);
     if (table_iterator != instance_tables_.end()) {
@@ -45,7 +64,21 @@ VkuInstanceDispatchTable* DispatchTableManager::GetInstanceDispatchTable(VkInsta
 void DispatchTableManager::DestroyInstanceTable(Key key) {
     assert(key != Key{});
     std::lock_guard<std::mutex> lock(instance_mutex_);
+    instance_keys_.erase(key);
     instance_tables_.erase(key);
+}
+
+VkInstance DispatchTableManager::GetVkInstance(VkPhysicalDevice physical_device) const {
+    if (physical_device == VK_NULL_HANDLE) {
+        return VK_NULL_HANDLE;
+    }
+    Key key = GetDispatchKey(physical_device);
+    std::lock_guard<std::mutex> lock(instance_mutex_);
+    auto key_iterator = instance_keys_.find(key);
+    if (key_iterator != instance_keys_.end()) {
+        return key_iterator->second;
+    }
+    return VK_NULL_HANDLE;
 }
 
 VkuDeviceDispatchTable* DispatchTableManager::InitDeviceTable(VkDevice device, PFN_vkGetDeviceProcAddr get_device_proc_addr) {
@@ -61,6 +94,9 @@ VkuDeviceDispatchTable* DispatchTableManager::InitDeviceTable(VkDevice device, P
 }
 
 VkuDeviceDispatchTable* DispatchTableManager::GetDeviceDispatchTable(const void* object) const {
+    if (object == nullptr) {
+        return nullptr;
+    }
     Key key = GetDispatchKey(object);
     std::lock_guard<std::mutex> lock(device_mutex_);
     auto table_iterator = device_tables_.find(key);
