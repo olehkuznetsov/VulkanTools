@@ -90,8 +90,10 @@ add_executable(test_common_layer
     common/test_dispatch_downstream.cpp
     common/test_dispatch_table_manager.cpp
     common/test_layer_base.cpp
+    common/test_layer_entrypoints.cpp
     common/test_layer_manifest.cpp
     layer_test_main.cpp
+    $<TARGET_OBJECTS:layersvt_entrypoints>
 )
 target_link_libraries(test_common_layer PRIVATE
     layersvt_common
