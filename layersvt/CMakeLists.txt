@@ -45,6 +45,8 @@ else()
     add_compile_options(-Wpointer-arith)
 endif()
 
+add_subdirectory(common)
+
 if(BUILD_APIDUMP)
     find_package(Python3 REQUIRED)
 
