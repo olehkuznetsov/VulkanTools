@@ -17,28 +17,19 @@
 
 #if defined(__ANDROID__)
 #include <dlfcn.h>
+#include <cstring>
 
 namespace {
 
-// Anonymous namespace function is NOT exported, keeping it local to each shared object.
-// We use a constructor attribute to trigger it when the library is loaded/opened.
-void layer_keep_alive_func();
-
-class KeepAlive {
-  public:
-    KeepAlive() {
-        Dl_info info;
-        // Attempt to find the filename of the library containing this code.
-        if (dladdr((void*)&layer_keep_alive_func, &info)) {
-            // Re-open with RTLD_NODELETE to force the library to stay resident.
-            dlopen(info.dli_fname, RTLD_NODELETE);
-        }
+// Function with constructor attribute executes during library load.
+// Re-open with RTLD_NODELETE to ensure the layer shared library stays resident in process memory
+// across Vulkan loader queries.
+__attribute__((constructor)) void LayerKeepAlive() {
+    Dl_info info{};
+    if (dladdr(reinterpret_cast<void*>(&LayerKeepAlive), &info) != 0 && info.dli_fname != nullptr &&
+        info.dli_fname[0] != '\0' && std::strstr(info.dli_fname, ".so") != nullptr) {
+        (void)dlopen(info.dli_fname, RTLD_NOW | RTLD_NODELETE);
     }
-};
-
-__attribute__((constructor)) void layer_keep_alive_func() {
-    static KeepAlive k;
-    (void)k;
 }
 
 }  // namespace

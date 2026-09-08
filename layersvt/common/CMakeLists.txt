@@ -30,3 +30,9 @@ target_link_libraries(layersvt_common PUBLIC
     Vulkan::Headers
     Vulkan::UtilityHeaders
 )
+if (ANDROID)
+    target_sources(layersvt_common PRIVATE
+        layer_keep_alive.cpp
+    )
+    target_link_libraries(layersvt_common PUBLIC ${CMAKE_DL_LIBS})
+endif()
