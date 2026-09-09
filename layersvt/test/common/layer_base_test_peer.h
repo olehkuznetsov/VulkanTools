@@ -1,0 +1,54 @@
+/* Copyright (C) 2026 Google Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#pragma once
+
+#include "common/layer_base.h"
+#include <vulkan/vulkan.h>
+#include <cstdint>
+
+namespace layersvt {
+
+class LayerBaseTestPeer {
+   public:
+    static PFN_vkVoidFunction GetKnownInstanceCommand(const char* command_name) {
+        return LayerBase::GetKnownInstanceCommand(VK_NULL_HANDLE, command_name);
+    }
+    static PFN_vkVoidFunction GetKnownDeviceCommand(const char* command_name) {
+        return LayerBase::GetKnownDeviceCommand(VK_NULL_HANDLE, command_name);
+    }
+
+    static DispatchTableManager& GetDispatchTableManager(LayerBase& layer) { return layer.GetDispatchTableManager(); }
+    static const DispatchTableManager& GetDispatchTableManager(const LayerBase& layer) { return layer.GetDispatchTableManager(); }
+
+    static VkuInstanceDispatchTable* GetInstanceDispatchTable(VkInstance instance) {
+        return LayerBase::GetInstanceDispatchTable(instance);
+    }
+    static VkuInstanceDispatchTable* GetInstanceDispatchTable(VkPhysicalDevice physical_device) {
+        return LayerBase::GetInstanceDispatchTable(physical_device);
+    }
+
+    static VkuDeviceDispatchTable* GetDeviceDispatchTable(const void* object) { return LayerBase::GetDeviceDispatchTable(object); }
+
+    static PFN_vkVoidFunction GetInstanceProcAddr(VkInstance instance, const char* command_name) {
+        return LayerBase::GetInstanceProcAddr(instance, command_name);
+    }
+    static PFN_vkVoidFunction GetDeviceProcAddr(VkDevice device, const char* command_name) {
+        return LayerBase::GetDeviceProcAddr(device, command_name);
+    }
+
+};
+
+}  // namespace layersvt
