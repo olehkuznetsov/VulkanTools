@@ -22,6 +22,425 @@
 
 using namespace layersvt;
 
+class LifecycleTestLayer : public LayerBase {
+   public:
+    bool pre_create_instance_called = false;
+    bool post_create_instance_called = false;
+    bool pre_destroy_instance_called = false;
+
+    bool pre_create_device_called = false;
+    bool post_create_device_called = false;
+    bool pre_destroy_device_called = false;
+
+    const VkAllocationCallbacks* captured_post_create_instance_allocator = nullptr;
+    const VkAllocationCallbacks* captured_post_create_device_allocator = nullptr;
+
+    void PreCreateInstance(VkInstanceCreateInfo*, const VkAllocationCallbacks*) override { pre_create_instance_called = true; }
+    void PostCreateInstance(VkInstance, const VkInstanceCreateInfo*, const VkAllocationCallbacks* allocator) override {
+        post_create_instance_called = true;
+        captured_post_create_instance_allocator = allocator;
+    }
+    void PreDestroyInstance(VkInstance, const VkAllocationCallbacks*) override { pre_destroy_instance_called = true; }
+
+    void PreCreateDevice(VkPhysicalDevice, VkDeviceCreateInfo*, const VkAllocationCallbacks*) override {
+        pre_create_device_called = true;
+    }
+    void PostCreateDevice(VkDevice, VkPhysicalDevice, const VkDeviceCreateInfo*, const VkAllocationCallbacks* allocator) override {
+        post_create_device_called = true;
+        captured_post_create_device_allocator = allocator;
+    }
+    void PreDestroyDevice(VkDevice, const VkAllocationCallbacks*) override { pre_destroy_device_called = true; }
+};
+
+TEST(LayerBaseTest, HookInvocations) {
+    LifecycleTestLayer layer;
+    EXPECT_FALSE(layer.pre_create_instance_called);
+    EXPECT_FALSE(layer.pre_create_device_called);
+    EXPECT_FALSE(layer.post_create_device_called);
+
+    // Verify hooks trigger as expected
+    layer.PreCreateInstance(nullptr, nullptr);
+    EXPECT_TRUE(layer.pre_create_instance_called);
+
+    layer.PreCreateDevice(VK_NULL_HANDLE, nullptr, nullptr);
+    EXPECT_TRUE(layer.pre_create_device_called);
+
+    layer.PostCreateDevice(VK_NULL_HANDLE, VK_NULL_HANDLE, nullptr, nullptr);
+    EXPECT_TRUE(layer.post_create_device_called);
+}
+
+TEST(LayerBaseTest, CreateInstanceWithMockChain) {
+    static void* mock_instance_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0x11223344));
+    static auto mock_instance_handle = reinterpret_cast<VkInstance>(&mock_instance_vtable);
+
+    PFN_vkGetInstanceProcAddr mock_get_instance_proc_addr = [](VkInstance, const char* function_name) -> PFN_vkVoidFunction {
+        if (std::strcmp(function_name, "vkCreateInstance") == 0) {
+            return reinterpret_cast<PFN_vkVoidFunction>(
+                +[](const VkInstanceCreateInfo*, const VkAllocationCallbacks*, VkInstance* instance_handle) -> VkResult {
+                    *instance_handle = mock_instance_handle;
+                    return VK_SUCCESS;
+                });
+        }
+        if (std::strcmp(function_name, "vkDestroyInstance") == 0) {
+            return reinterpret_cast<PFN_vkVoidFunction>(+[](VkInstance, const VkAllocationCallbacks*) {});
+        }
+        return nullptr;
+    };
+
+    VkLayerInstanceLink layer_link{nullptr, mock_get_instance_proc_addr, nullptr};
+    VkLayerInstanceCreateInfo chain_info{VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO, nullptr, VK_LAYER_LINK_INFO, {&layer_link}};
+
+    VkInstanceCreateInfo instance_create_info{};
+    instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    instance_create_info.pNext = &chain_info;
+    LifecycleTestLayer layer;
+    VkInstance instance = VK_NULL_HANDLE;
+
+    VkAllocationCallbacks mock_allocator{};
+    EXPECT_EQ(LayerBaseTestPeer::CreateInstance(&instance_create_info, &mock_allocator, &instance), VK_SUCCESS);
+    EXPECT_EQ(instance, mock_instance_handle);
+    EXPECT_TRUE(layer.pre_create_instance_called);
+    EXPECT_TRUE(layer.post_create_instance_called);
+    EXPECT_EQ(layer.captured_post_create_instance_allocator, &mock_allocator);
+    EXPECT_NE(LayerBaseTestPeer::GetDispatchTableManager(layer).GetInstanceDispatchTable(instance), nullptr);
+
+    LayerBaseTestPeer::DestroyInstance(instance, nullptr);
+    EXPECT_TRUE(layer.pre_destroy_instance_called);
+    EXPECT_EQ(LayerBaseTestPeer::GetDispatchTableManager(layer).GetInstanceDispatchTable(instance), nullptr);
+}
+
+TEST(LayerBaseTest, CreateInstanceNullHandling) {
+    LifecycleTestLayer layer;
+    VkInstance instance = VK_NULL_HANDLE;
+    // Null create info
+    EXPECT_EQ(LayerBaseTestPeer::CreateInstance(nullptr, nullptr, &instance), VK_ERROR_INITIALIZATION_FAILED);
+
+    // Missing chain info
+    VkInstanceCreateInfo instance_create_info{};
+    instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    EXPECT_EQ(LayerBaseTestPeer::CreateInstance(&instance_create_info, nullptr, &instance), VK_ERROR_INITIALIZATION_FAILED);
+}
+
+TEST(LayerBaseTest, PreCreateNotInvokedOnMissingChain) {
+    LifecycleTestLayer layer;
+    VkInstance instance = VK_NULL_HANDLE;
+    VkInstanceCreateInfo instance_create_info{};
+    instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    EXPECT_EQ(LayerBaseTestPeer::CreateInstance(&instance_create_info, nullptr, &instance), VK_ERROR_INITIALIZATION_FAILED);
+    EXPECT_FALSE(layer.pre_create_instance_called);
+}
+
+class SubclassWithInspection : public LayerBase {
+   public:
+    bool inspected = false;
+    void PreCreateInstance(VkInstanceCreateInfo* create_info, const VkAllocationCallbacks*) override {
+        if (create_info && create_info->pApplicationInfo) {
+            inspected = true;
+        }
+    }
+};
+
+TEST(LayerBaseTest, CreateInstanceNullSafetyInHook) {
+    SubclassWithInspection layer;
+    VkInstance instance = VK_NULL_HANDLE;
+    EXPECT_EQ(LayerBaseTestPeer::CreateInstance(nullptr, nullptr, &instance), VK_ERROR_INITIALIZATION_FAILED);
+    EXPECT_FALSE(layer.inspected);
+
+    VkInstanceCreateInfo instance_create_info{};
+    EXPECT_EQ(LayerBaseTestPeer::CreateInstance(&instance_create_info, nullptr, nullptr), VK_ERROR_INITIALIZATION_FAILED);
+}
+
+TEST(LayerBaseTest, PreCreateInstanceMutation) {
+    class MutatingLayer : public LayerBase {
+       public:
+        void PreCreateInstance(VkInstanceCreateInfo* create_info, const VkAllocationCallbacks*) override {
+            if (create_info) {
+                create_info->flags = 0xABCD;
+            }
+        }
+    };
+
+    static VkInstanceCreateFlags received_flags = 0;
+    static void* mock_instance_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0x11223344));
+    static auto mock_instance_handle = reinterpret_cast<VkInstance>(&mock_instance_vtable);
+
+    PFN_vkGetInstanceProcAddr mock_get_instance_proc_addr = [](VkInstance, const char* function_name) -> PFN_vkVoidFunction {
+        if (std::strcmp(function_name, "vkCreateInstance") == 0) {
+            return reinterpret_cast<PFN_vkVoidFunction>(
+                +[](const VkInstanceCreateInfo* create_info, const VkAllocationCallbacks*, VkInstance* instance) -> VkResult {
+                    received_flags = create_info->flags;
+                    *instance = mock_instance_handle;
+                    return VK_SUCCESS;
+                });
+        }
+        if (std::strcmp(function_name, "vkDestroyInstance") == 0) {
+            return reinterpret_cast<PFN_vkVoidFunction>(+[](VkInstance, const VkAllocationCallbacks*) {});
+        }
+        return nullptr;
+    };
+
+    VkLayerInstanceLink layer_link{nullptr, mock_get_instance_proc_addr, nullptr};
+    VkLayerInstanceCreateInfo chain_info{VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO, nullptr, VK_LAYER_LINK_INFO, {&layer_link}};
+
+    VkInstanceCreateInfo instance_create_info{};
+    instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    instance_create_info.pNext = &chain_info;
+
+    MutatingLayer layer;
+    VkInstance instance = VK_NULL_HANDLE;
+    EXPECT_EQ(LayerBaseTestPeer::CreateInstance(&instance_create_info, nullptr, &instance), VK_SUCCESS);
+    EXPECT_EQ(received_flags, 0xABCDu);
+    LayerBaseTestPeer::DestroyInstance(instance, nullptr);
+}
+
+TEST(LayerBaseTest, PreCreateDeviceMutation) {
+    class MutatingLayer : public LayerBase {
+       public:
+        void PreCreateDevice(VkPhysicalDevice, VkDeviceCreateInfo* create_info, const VkAllocationCallbacks*) override {
+            if (create_info) {
+                create_info->flags = 0x5678;
+            }
+        }
+    };
+
+    static VkDeviceCreateFlags received_flags = 0;
+    static void* mock_device_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0x55667788));
+    static auto mock_device_handle = reinterpret_cast<VkDevice>(&mock_device_vtable);
+
+    PFN_vkGetInstanceProcAddr mock_get_instance_proc_addr = [](VkInstance, const char* function_name) -> PFN_vkVoidFunction {
+        if (std::strcmp(function_name, "vkCreateDevice") == 0) {
+            return reinterpret_cast<PFN_vkVoidFunction>(+[](VkPhysicalDevice, const VkDeviceCreateInfo* create_info,
+                                                            const VkAllocationCallbacks*, VkDevice* device_handle) -> VkResult {
+                received_flags = create_info->flags;
+                *device_handle = mock_device_handle;
+                return VK_SUCCESS;
+            });
+        }
+        return nullptr;
+    };
+
+    PFN_vkGetDeviceProcAddr mock_get_device_proc_addr = [](VkDevice, const char* function_name) -> PFN_vkVoidFunction {
+        if (std::strcmp(function_name, "vkDestroyDevice") == 0) {
+            return reinterpret_cast<PFN_vkVoidFunction>(+[](VkDevice, const VkAllocationCallbacks*) {});
+        }
+        return nullptr;
+    };
+
+    VkLayerDeviceLink layer_link{nullptr, mock_get_instance_proc_addr, mock_get_device_proc_addr};
+    VkLayerDeviceCreateInfo chain_info{VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO, nullptr, VK_LAYER_LINK_INFO, {&layer_link}};
+
+    VkDeviceCreateInfo device_create_info{};
+    device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    device_create_info.pNext = &chain_info;
+
+    void* mock_instance_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0x11223344));
+    auto mock_instance = reinterpret_cast<VkInstance>(&mock_instance_vtable);
+    auto mock_physical_device = reinterpret_cast<VkPhysicalDevice>(static_cast<uintptr_t>(0x5555));
+
+    MutatingLayer layer;
+    LayerBaseTestPeer::GetDispatchTableManager(layer).SetVkInstance(mock_physical_device, mock_instance);
+    VkDevice device = VK_NULL_HANDLE;
+
+    EXPECT_EQ(LayerBaseTestPeer::CreateDevice(mock_physical_device, &device_create_info, nullptr, &device), VK_SUCCESS);
+    EXPECT_EQ(received_flags, 0x5678u);
+
+    LayerBaseTestPeer::DestroyDevice(device, nullptr);
+}
+
+TEST(LayerBaseTest, TeardownOrdering) {
+    class TeardownOrderLayer : public LayerBase {
+       public:
+        VkInstance captured_instance_in_pre_destroy = VK_NULL_HANDLE;
+        VkPhysicalDevice mock_physical_device = reinterpret_cast<VkPhysicalDevice>(static_cast<uintptr_t>(0x9999));
+
+        void PreDestroyInstance(VkInstance, const VkAllocationCallbacks*) override {
+            captured_instance_in_pre_destroy = LayerBaseTestPeer::GetVkInstance(mock_physical_device);
+        }
+    };
+
+    void* mock_instance_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0x11223344));
+    auto mock_instance = reinterpret_cast<VkInstance>(&mock_instance_vtable);
+    auto mock_physical_device = reinterpret_cast<VkPhysicalDevice>(static_cast<uintptr_t>(0x9999));
+
+    TeardownOrderLayer layer;
+    LayerBaseTestPeer::GetDispatchTableManager(layer).InitInstanceTable(
+        mock_instance, [](VkInstance, const char* function_name) -> PFN_vkVoidFunction {
+            if (std::strcmp(function_name, "vkDestroyInstance") == 0) {
+                return reinterpret_cast<PFN_vkVoidFunction>(+[](VkInstance, const VkAllocationCallbacks*) {});
+            }
+            return nullptr;
+        });
+    LayerBaseTestPeer::GetDispatchTableManager(layer).SetVkInstance(mock_physical_device, mock_instance);
+
+    LayerBaseTestPeer::DestroyInstance(mock_instance, nullptr);
+
+    // Verify PreDestroyInstance could still query the physical device mapping
+    EXPECT_EQ(layer.captured_instance_in_pre_destroy, mock_instance);
+    // After DestroyInstance finishes, mapping is cleaned up
+    EXPECT_EQ(LayerBaseTestPeer::GetDispatchTableManager(layer).GetVkInstance(mock_physical_device), VK_NULL_HANDLE);
+}
+
+TEST(LayerBaseTest, CreateDeviceWithMockChain) {
+    void* mock_instance_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0x11223344));
+    auto mock_instance = reinterpret_cast<VkInstance>(&mock_instance_vtable);
+    auto mock_physical_device = reinterpret_cast<VkPhysicalDevice>(static_cast<uintptr_t>(0x5555));
+
+    static void* mock_device_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0x55667788));
+    static auto mock_device_handle = reinterpret_cast<VkDevice>(&mock_device_vtable);
+
+    PFN_vkGetInstanceProcAddr mock_get_instance_proc_addr = [](VkInstance, const char* function_name) -> PFN_vkVoidFunction {
+        if (std::strcmp(function_name, "vkCreateDevice") == 0) {
+            return reinterpret_cast<PFN_vkVoidFunction>(+[](VkPhysicalDevice, const VkDeviceCreateInfo*,
+                                                            const VkAllocationCallbacks*, VkDevice* device_handle) -> VkResult {
+                *device_handle = mock_device_handle;
+                return VK_SUCCESS;
+            });
+        }
+        return nullptr;
+    };
+
+    PFN_vkGetDeviceProcAddr mock_get_device_proc_addr = [](VkDevice, const char* function_name) -> PFN_vkVoidFunction {
+        if (std::strcmp(function_name, "vkDestroyDevice") == 0) {
+            return reinterpret_cast<PFN_vkVoidFunction>(+[](VkDevice, const VkAllocationCallbacks*) {});
+        }
+        return nullptr;
+    };
+
+    VkLayerDeviceLink layer_link{nullptr, mock_get_instance_proc_addr, mock_get_device_proc_addr};
+    VkLayerDeviceCreateInfo chain_info{VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO, nullptr, VK_LAYER_LINK_INFO, {&layer_link}};
+
+    PFN_vkSetDeviceLoaderData mock_loader_callback = [](VkDevice, void*) -> VkResult { return VK_SUCCESS; };
+    VkLayerDeviceCreateInfo callback_info{VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO, &chain_info, VK_LOADER_DATA_CALLBACK, {}};
+    callback_info.u.pfnSetDeviceLoaderData = mock_loader_callback;
+
+    VkDeviceCreateInfo device_create_info{};
+    device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    device_create_info.pNext = &callback_info;
+
+    LifecycleTestLayer layer;
+    LayerBaseTestPeer::GetDispatchTableManager(layer).SetVkInstance(mock_physical_device, mock_instance);
+    VkDevice device = VK_NULL_HANDLE;
+
+    VkAllocationCallbacks mock_allocator{};
+    EXPECT_EQ(LayerBaseTestPeer::CreateDevice(mock_physical_device, &device_create_info, &mock_allocator, &device),
+              VK_SUCCESS);
+    EXPECT_EQ(device, mock_device_handle);
+    EXPECT_TRUE(layer.pre_create_device_called);
+    EXPECT_TRUE(layer.post_create_device_called);
+    EXPECT_EQ(layer.captured_post_create_device_allocator, &mock_allocator);
+    EXPECT_NE(LayerBaseTestPeer::GetDispatchTableManager(layer).GetDeviceDispatchTable(device), nullptr);
+    EXPECT_EQ(LayerBaseTestPeer::GetDispatchTableManager(layer).GetDeviceLoaderDataCallback(device), mock_loader_callback);
+
+    LayerBaseTestPeer::DestroyDevice(device, nullptr);
+    EXPECT_TRUE(layer.pre_destroy_device_called);
+    EXPECT_EQ(LayerBaseTestPeer::GetDispatchTableManager(layer).GetDeviceDispatchTable(device), nullptr);
+    EXPECT_EQ(LayerBaseTestPeer::GetDispatchTableManager(layer).GetDeviceLoaderDataCallback(device), nullptr);
+}
+
+TEST(LayerBaseTest, CreateDeviceNullHandling) {
+    LayerBase layer;
+    VkDevice device = VK_NULL_HANDLE;
+    void* mock_instance_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0x11223344));
+    auto mock_instance = reinterpret_cast<VkInstance>(&mock_instance_vtable);
+    auto mock_physical_device = reinterpret_cast<VkPhysicalDevice>(static_cast<uintptr_t>(0x5555));
+    LayerBaseTestPeer::GetDispatchTableManager(layer).SetVkInstance(mock_physical_device, mock_instance);
+
+    // Null create info
+    EXPECT_EQ(LayerBaseTestPeer::CreateDevice(mock_physical_device, nullptr, nullptr, &device),
+              VK_ERROR_INITIALIZATION_FAILED);
+
+    // Missing chain info
+    VkDeviceCreateInfo device_create_info{};
+    device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    EXPECT_EQ(LayerBaseTestPeer::CreateDevice(mock_physical_device, &device_create_info, nullptr, &device),
+              VK_ERROR_INITIALIZATION_FAILED);
+}
+
+TEST(LayerBaseTest, CreateDeviceInvalidInputSafety) {
+    LayerBase layer;
+    VkDevice device = VK_NULL_HANDLE;
+    VkDeviceCreateInfo create_info{};
+    create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+
+    auto mock_untracked_physical_device = reinterpret_cast<VkPhysicalDevice>(static_cast<uintptr_t>(0xBAADF00D));
+    // Untracked physical device must fail cleanly without crashing
+    EXPECT_EQ(LayerBaseTestPeer::CreateDevice(mock_untracked_physical_device, &create_info, nullptr, &device),
+              VK_ERROR_INITIALIZATION_FAILED);
+
+    // Null device pointer must fail cleanly
+    EXPECT_EQ(LayerBaseTestPeer::CreateDevice(mock_untracked_physical_device, &create_info, nullptr, nullptr),
+              VK_ERROR_INITIALIZATION_FAILED);
+
+    // VK_NULL_HANDLE physical device must fail cleanly
+    EXPECT_EQ(LayerBaseTestPeer::CreateDevice(VK_NULL_HANDLE, &create_info, nullptr, &device),
+              VK_ERROR_INITIALIZATION_FAILED);
+}
+
+class HookTestLayer : public LayerBase {
+   public:
+    using LayerBase::LayerBase;
+    using LayerBase::PostCreateDevice;
+    using LayerBase::PostCreateInstance;
+    using LayerBase::PreCreateDevice;
+    using LayerBase::PreCreateInstance;
+    using LayerBase::PreDestroyDevice;
+    using LayerBase::PreDestroyInstance;
+};
+
+TEST(LayerBaseTest, DefaultHooksExecution) {
+    HookTestLayer base;
+
+    // Execute default no-op hooks to verify base class behavior
+    VkInstanceCreateInfo instance_create_info{};
+    base.PreCreateInstance(&instance_create_info, nullptr);
+    base.PostCreateInstance(VK_NULL_HANDLE, &instance_create_info, nullptr);
+    base.PreDestroyInstance(VK_NULL_HANDLE, nullptr);
+
+    VkDeviceCreateInfo device_create_info{};
+    base.PreCreateDevice(VK_NULL_HANDLE, &device_create_info, nullptr);
+    base.PostCreateDevice(VK_NULL_HANDLE, VK_NULL_HANDLE, &device_create_info, nullptr);
+    base.PreDestroyDevice(VK_NULL_HANDLE, nullptr);
+}
+
+TEST(LayerBaseTest, CreateInstanceNullFpCreateInstance) {
+    static PFN_vkGetInstanceProcAddr mock_get_instance_proc_addr = [](VkInstance, const char*) -> PFN_vkVoidFunction {
+        return nullptr;
+    };
+    VkLayerInstanceLink layer_link{nullptr, mock_get_instance_proc_addr, nullptr};
+    VkLayerInstanceCreateInfo chain_info{VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO, nullptr, VK_LAYER_LINK_INFO, {&layer_link}};
+
+    VkInstanceCreateInfo instance_create_info{};
+    instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    instance_create_info.pNext = &chain_info;
+
+    LifecycleTestLayer layer;
+    VkInstance instance = VK_NULL_HANDLE;
+    EXPECT_EQ(LayerBaseTestPeer::CreateInstance(&instance_create_info, nullptr, &instance), VK_ERROR_INITIALIZATION_FAILED);
+}
+
+TEST(LayerBaseTest, CreateDeviceNullFpCreateDevice) {
+    void* mock_instance_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0x11223344));
+    auto mock_instance = reinterpret_cast<VkInstance>(&mock_instance_vtable);
+    auto mock_physical_device = reinterpret_cast<VkPhysicalDevice>(static_cast<uintptr_t>(0x5555));
+
+    LifecycleTestLayer layer;
+    LayerBaseTestPeer::GetDispatchTableManager(layer).SetVkInstance(mock_physical_device, mock_instance);
+
+    static PFN_vkGetInstanceProcAddr mock_get_instance_proc_addr = [](VkInstance, const char*) -> PFN_vkVoidFunction {
+        return nullptr;
+    };
+    static PFN_vkGetDeviceProcAddr mock_get_device_proc_addr = [](VkDevice, const char*) -> PFN_vkVoidFunction { return nullptr; };
+    VkLayerDeviceLink layer_link{nullptr, mock_get_instance_proc_addr, mock_get_device_proc_addr};
+    VkLayerDeviceCreateInfo chain_info{VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO, nullptr, VK_LAYER_LINK_INFO, {&layer_link}};
+
+    VkDeviceCreateInfo device_create_info{};
+    device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    device_create_info.pNext = &chain_info;
+
+    VkDevice device = VK_NULL_HANDLE;
+    EXPECT_EQ(LayerBaseTestPeer::CreateDevice(mock_physical_device, &device_create_info, nullptr, &device),
+              VK_ERROR_INITIALIZATION_FAILED);
+}
 TEST(LayerBaseTest, LayerTracking) {
     EXPECT_EQ(LayerBase::Get(), nullptr);
     {
@@ -40,9 +459,13 @@ TEST(LayerBaseTest, LayerTracking) {
 TEST(LayerBaseTest, GetKnownCommandsCommon) {
     LayerBase layer;
     EXPECT_NE(LayerBaseTestPeer::GetKnownInstanceCommand("vkGetInstanceProcAddr"), nullptr);
+    EXPECT_NE(LayerBaseTestPeer::GetKnownInstanceCommand("vkCreateInstance"), nullptr);
+    EXPECT_NE(LayerBaseTestPeer::GetKnownInstanceCommand("vkDestroyInstance"), nullptr);
+    EXPECT_NE(LayerBaseTestPeer::GetKnownInstanceCommand("vkCreateDevice"), nullptr);
     EXPECT_EQ(LayerBaseTestPeer::GetKnownInstanceCommand("vkNonExistentInstanceFunction"), nullptr);
 
     EXPECT_NE(LayerBaseTestPeer::GetKnownDeviceCommand("vkGetDeviceProcAddr"), nullptr);
+    EXPECT_NE(LayerBaseTestPeer::GetKnownDeviceCommand("vkDestroyDevice"), nullptr);
     EXPECT_EQ(LayerBaseTestPeer::GetKnownDeviceCommand("vkCreateDevice"), nullptr);
     EXPECT_EQ(LayerBaseTestPeer::GetKnownDeviceCommand("vkNonExistentDeviceFunction"), nullptr);
 }
@@ -77,9 +500,13 @@ TEST(LayerBaseTest, LayerSpecificOverrideHooks) {
     EXPECT_EQ(LayerBaseTestPeer::GetKnownInstanceCommand("vkCustomInstanceCmd"), TestDerivedLayer::mock_custom_instance_function);
     EXPECT_EQ(LayerBaseTestPeer::GetKnownDeviceCommand("vkCustomDeviceCmd"), TestDerivedLayer::mock_custom_device_function);
 
-    // Common command handled by base fallback
+    // Common commands still handled by base template method fallback
     EXPECT_NE(LayerBaseTestPeer::GetKnownInstanceCommand("vkGetInstanceProcAddr"), nullptr);
+    EXPECT_NE(LayerBaseTestPeer::GetKnownInstanceCommand("vkCreateInstance"), nullptr);
+    EXPECT_NE(LayerBaseTestPeer::GetKnownInstanceCommand("vkCreateDevice"), nullptr);
     EXPECT_NE(LayerBaseTestPeer::GetKnownDeviceCommand("vkGetDeviceProcAddr"), nullptr);
+    EXPECT_NE(LayerBaseTestPeer::GetKnownDeviceCommand("vkDestroyDevice"), nullptr);
+    EXPECT_EQ(LayerBaseTestPeer::GetKnownDeviceCommand("vkCreateDevice"), nullptr);
 
     // Unhandled commands return nullptr
     EXPECT_EQ(LayerBaseTestPeer::GetKnownInstanceCommand("vkUnknownCmd"), nullptr);
@@ -92,6 +519,7 @@ TEST(LayerBaseTest, ProcAddrDispatchChain) {
 
     // 1. Global commands can be queried with VK_NULL_HANDLE
     EXPECT_NE(LayerBaseTestPeer::GetInstanceProcAddr(VK_NULL_HANDLE, "vkGetInstanceProcAddr"), nullptr);
+    EXPECT_NE(LayerBaseTestPeer::GetInstanceProcAddr(VK_NULL_HANDLE, "vkCreateInstance"), nullptr);
 
     // Non-global commands must return nullptr when instance is VK_NULL_HANDLE
     EXPECT_EQ(LayerBaseTestPeer::GetInstanceProcAddr(VK_NULL_HANDLE, "vkDestroyInstance"), nullptr);
@@ -123,6 +551,8 @@ TEST(LayerBaseTest, ProcAddrDispatchChain) {
               TestDerivedLayer::mock_custom_instance_function);
     EXPECT_EQ(LayerBaseTestPeer::GetInstanceProcAddr(mock_instance, "vkCustomDeviceCmd"),
               TestDerivedLayer::mock_custom_device_function);
+    EXPECT_NE(LayerBaseTestPeer::GetInstanceProcAddr(mock_instance, "vkCreateDevice"), nullptr);
+    EXPECT_NE(LayerBaseTestPeer::GetInstanceProcAddr(mock_instance, "vkDestroyInstance"), nullptr);
     EXPECT_EQ(LayerBaseTestPeer::GetInstanceProcAddr(mock_instance, "vkNextLayerInstCmd"), mock_next_instance_command);
     EXPECT_EQ(LayerBaseTestPeer::GetInstanceProcAddr(mock_instance, "vkUnimplementedCmd"), nullptr);
 
@@ -141,9 +571,37 @@ TEST(LayerBaseTest, ProcAddrDispatchChain) {
     EXPECT_EQ(LayerBaseTestPeer::GetDeviceProcAddr(mock_device, "vkCustomDeviceCmd"),
               TestDerivedLayer::mock_custom_device_function);
     EXPECT_NE(LayerBaseTestPeer::GetDeviceProcAddr(mock_device, "vkGetDeviceProcAddr"), nullptr);
+    EXPECT_NE(LayerBaseTestPeer::GetDeviceProcAddr(mock_device, "vkDestroyDevice"), nullptr);
     // Instance commands must return nullptr via GetDeviceProcAddr even with valid device
     EXPECT_EQ(LayerBaseTestPeer::GetDeviceProcAddr(mock_device, "vkCreateDevice"), nullptr);
     EXPECT_EQ(LayerBaseTestPeer::GetDeviceProcAddr(mock_device, "vkDestroyInstance"), nullptr);
     EXPECT_EQ(LayerBaseTestPeer::GetDeviceProcAddr(mock_device, "vkNextLayerDevCmd"), mock_next_device_command);
     EXPECT_EQ(LayerBaseTestPeer::GetDeviceProcAddr(mock_device, "vkUnimplementedCmd"), nullptr);
+}
+
+TEST(LayerBaseTest, DestroyNullHandles) {
+    class DestroyTrackingLayer : public LayerBase {
+       public:
+        int pre_destroy_instance_calls = 0;
+        int pre_destroy_device_calls = 0;
+
+       protected:
+        void PreDestroyInstance(VkInstance, const VkAllocationCallbacks*) override {
+            ADD_FAILURE() << "PreDestroyInstance should not be called for VK_NULL_HANDLE";
+            ++pre_destroy_instance_calls;
+        }
+        void PreDestroyDevice(VkDevice, const VkAllocationCallbacks*) override {
+            ADD_FAILURE() << "PreDestroyDevice should not be called for VK_NULL_HANDLE";
+            ++pre_destroy_device_calls;
+        }
+    };
+
+    DestroyTrackingLayer layer;
+    // Vulkan specification mandates destroying VK_NULL_HANDLE is a valid no-op.
+    // Virtual PreDestroy hooks are bypassed when destroying VK_NULL_HANDLE.
+    LayerBaseTestPeer::DestroyInstance(VK_NULL_HANDLE, nullptr);
+    EXPECT_EQ(layer.pre_destroy_instance_calls, 0);
+
+    LayerBaseTestPeer::DestroyDevice(VK_NULL_HANDLE, nullptr);
+    EXPECT_EQ(layer.pre_destroy_device_calls, 0);
 }
