@@ -473,6 +473,8 @@ TEST(LayerBaseTest, GetKnownCommandsCommon) {
     EXPECT_NE(LayerBaseTestPeer::GetKnownInstanceCommand("vkGetInstanceProcAddr"), nullptr);
     EXPECT_NE(LayerBaseTestPeer::GetKnownInstanceCommand("vkCreateInstance"), nullptr);
     EXPECT_NE(LayerBaseTestPeer::GetKnownInstanceCommand("vkDestroyInstance"), nullptr);
+    EXPECT_EQ(LayerBaseTestPeer::GetKnownInstanceCommand("vkEnumeratePhysicalDevices"), nullptr);
+    EXPECT_EQ(LayerBaseTestPeer::GetKnownInstanceCommand("vkEnumeratePhysicalDeviceGroups"), nullptr);
     EXPECT_NE(LayerBaseTestPeer::GetKnownInstanceCommand("vkCreateDevice"), nullptr);
     EXPECT_EQ(LayerBaseTestPeer::GetKnownInstanceCommand("vkNonExistentInstanceFunction"), nullptr);
 
@@ -685,4 +687,60 @@ TEST(LayerBaseTest, DestroyNullHandles) {
 
     LayerBaseTestPeer::DestroyDevice(VK_NULL_HANDLE, nullptr);
     EXPECT_EQ(layer.pre_destroy_device_calls, 0);
+}
+
+TEST(LayerBaseTest, PhysicalDeviceResolvesInstanceTable) {
+    void* mock_instance_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0x11223344));
+    auto mock_instance = reinterpret_cast<VkInstance>(&mock_instance_vtable);
+    // Loader ABI: a physical device shares the dispatch key of its parent instance.
+    void* mock_physical_device_object = mock_instance_vtable;
+    auto mock_physical_device = reinterpret_cast<VkPhysicalDevice>(&mock_physical_device_object);
+
+    LayerBase layer;
+    LayerBaseTestPeer::GetDispatchTableManager(layer).InitInstanceTable(
+        mock_instance, [](VkInstance, const char*) -> PFN_vkVoidFunction { return nullptr; });
+
+    EXPECT_NE(LayerBaseTestPeer::GetInstanceDispatchTable(mock_physical_device), nullptr);
+    EXPECT_EQ(LayerBaseTestPeer::GetInstanceDispatchTable(mock_physical_device),
+              LayerBaseTestPeer::GetInstanceDispatchTable(mock_instance));
+    EXPECT_EQ(LayerBaseTestPeer::GetVkInstance(mock_physical_device), mock_instance);
+}
+
+TEST(LayerBaseTest, EnumeratePhysicalDevicesRouteDownstream) {
+    void* mock_instance_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0x11223344));
+    auto mock_instance = reinterpret_cast<VkInstance>(&mock_instance_vtable);
+    static auto mock_downstream_command = reinterpret_cast<PFN_vkVoidFunction>(static_cast<uintptr_t>(0xABCDEF04));
+
+    LayerBase layer;
+    LayerBaseTestPeer::GetDispatchTableManager(layer).InitInstanceTable(
+        mock_instance, [](VkInstance, const char* function_name) -> PFN_vkVoidFunction {
+            if (std::strcmp(function_name, "vkEnumeratePhysicalDevices") == 0 ||
+                std::strcmp(function_name, "vkEnumeratePhysicalDeviceGroups") == 0) {
+                return mock_downstream_command;
+            }
+            return nullptr;
+        });
+
+    EXPECT_EQ(LayerBaseTestPeer::GetInstanceProcAddr(mock_instance, "vkEnumeratePhysicalDevices"), mock_downstream_command);
+    EXPECT_EQ(LayerBaseTestPeer::GetInstanceProcAddr(mock_instance, "vkEnumeratePhysicalDeviceGroups"), mock_downstream_command);
+}
+
+TEST(LayerBaseTest, ResetLayerMultipleInvocations) {
+    layer_test::ResetLayer<HookTestLayer>();
+    EXPECT_NE(LayerBase::Get(), nullptr);
+    layer_test::ResetLayer<HookTestLayer>();
+    EXPECT_NE(LayerBase::Get(), nullptr);
+    layer_test::ResetLayer<HookTestLayer>(/*destroy=*/true);
+    EXPECT_EQ(LayerBase::Get(), nullptr);
+}
+
+TEST(LayerBaseTest, ResetLayerCrossType) {
+    layer_test::ResetLayer<HookTestLayer>();
+    EXPECT_NE(LayerBase::Get(), nullptr);
+    layer_test::ResetLayer<LifecycleTestLayer>();
+    EXPECT_NE(LayerBase::Get(), nullptr);
+    layer_test::ResetLayer<HookTestLayer>();
+    EXPECT_NE(LayerBase::Get(), nullptr);
+    layer_test::ResetLayer<HookTestLayer>(/*destroy=*/true);
+    EXPECT_EQ(LayerBase::Get(), nullptr);
 }
