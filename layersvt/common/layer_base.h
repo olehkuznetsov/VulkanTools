@@ -16,6 +16,7 @@
 #pragma once
 
 #include "dispatch_table_manager.h"
+#include <vulkan/utility/vk_dispatch_table.h>
 #include <vulkan/vk_layer.h>
 #include <vulkan/vulkan.h>
 #include <vector>
@@ -26,6 +27,29 @@ namespace layersvt {
 struct LayerManifest;
 class LayerBaseTestPeer;
 
+/**
+ * Base class providing common infrastructure for Vulkan layer implementations.
+ *
+ * Implements the Template Method pattern for Vulkan API routing, centralizing loader
+ * negotiation, dispatch table tracking, handle mapping, and property enumeration:
+ *
+ * - Singleton Lifecycle: A single LayerBase instance is created at library load time
+ *   (typically as a file-scope static object in the layer's translation unit).
+ * - Thread Safety: Internal registries (DispatchTableManager) are thread-safe.
+ *   Overridden hooks called concurrently by Vulkan applications must maintain their
+ *   own thread safety for layer-specific state.
+ * - Command Routing: Custom commands return function pointers via GetLayerInstanceCommand
+ *   and GetLayerDeviceCommand; unhandled commands route to downstream dispatch tables.
+ * - Property Enumeration: Serves layer extensions and tool properties automatically
+ *   from GetLayerManifest(), merging layer properties with downstream capabilities.
+ * - Lifecycle Hooks: PreCreate* / PostCreate* / PreDestroy* hooks bracket instance and
+ *   device creation and destruction. PreDestroy* hooks are guaranteed non-null handles
+ *   (null handle calls return immediately per Vulkan Spec 2.7). No PostDestroy* hooks
+ *   exist because downstream destruction frees and invalidates handles before returning.
+ *
+ * For authoring guides, CMake build setup, and downstream dispatch examples,
+ * see layersvt/common/README.md.
+ */
 class LayerBase {
    public:
     LayerBase();
@@ -43,11 +67,19 @@ class LayerBase {
      */
     [[nodiscard]] static LayerBase* Get() noexcept { return layer_; }
 
+    /**
+     * Retrieves the parent VkInstance associated with a physical device.
+     * Returns the parent VkInstance on success, or VK_NULL_HANDLE if unregistered or invalid.
+     */
+    [[nodiscard]] static VkInstance GetVkInstance(VkPhysicalDevice physical_device);
+
+    /**
+     * Retrieves the loader data callback for initializing dispatchable handles created by layers.
+     * Returns the registered PFN_vkSetDeviceLoaderData callback on success, or nullptr if unset.
+     */
+    [[nodiscard]] static PFN_vkSetDeviceLoaderData GetDeviceLoaderDataCallback(VkDevice device);
+
    protected:
-    // Layer extension interface
-
-    // Layer manifest
-
     /**
      * Override to provide the layer's metadata, supported extensions, and tool properties.
      * Enables automatic handling of layer and extension property enumeration queries.
@@ -77,7 +109,8 @@ class LayerBase {
 
     /**
      * Indicates whether this layer intercepts physical device tool properties.
-     * Returns true if tool properties are intercepted, or false otherwise.
+     * Default implementation returns true if the layer manifest defines tool_properties.
+     * Returns true if tool properties queries should be intercepted, or false to dispatch downstream.
      */
     [[nodiscard]] virtual bool HasToolProperties() const;
 
@@ -141,18 +174,6 @@ class LayerBase {
      */
     virtual void PreDestroyDevice(VkDevice device, const VkAllocationCallbacks* allocator);
 
-    /**
-     * Retrieves the parent VkInstance associated with a physical device.
-     * Returns the parent VkInstance on success, or VK_NULL_HANDLE if unregistered.
-     */
-    [[nodiscard]] static VkInstance GetVkInstance(VkPhysicalDevice physical_device);
-
-    /**
-     * Retrieves the loader data callback for initializing dispatchable handles created by layers.
-     * Returns the registered PFN_vkSetDeviceLoaderData on success, or nullptr if unset.
-     */
-    [[nodiscard]] static PFN_vkSetDeviceLoaderData GetDeviceLoaderDataCallback(VkDevice device);
-
    private:
     [[nodiscard]] DispatchTableManager& GetDispatchTableManager() noexcept { return dispatch_table_manager_; }
     [[nodiscard]] const DispatchTableManager& GetDispatchTableManager() const noexcept { return dispatch_table_manager_; }
@@ -168,6 +189,18 @@ class LayerBase {
     static inline LayerBase* layer_ = nullptr;
 
     // Exported Vulkan layer entry points (implemented in layer_entrypoints.cpp)
+#if defined(_WIN32)
+    friend VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL ::vkGetInstanceProcAddr(VkInstance instance, const char* command_name);
+    friend VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL ::vkGetDeviceProcAddr(VkDevice device, const char* command_name);
+    friend VKAPI_ATTR VkResult VKAPI_CALL ::vkEnumerateInstanceLayerProperties(uint32_t* property_count, VkLayerProperties* properties);
+    friend VKAPI_ATTR VkResult VKAPI_CALL ::vkEnumerateInstanceExtensionProperties(const char* layer_name, uint32_t* property_count,
+                                                                                  VkExtensionProperties* properties);
+    friend VKAPI_ATTR VkResult VKAPI_CALL ::vkEnumerateDeviceLayerProperties(VkPhysicalDevice physical_device, uint32_t* property_count,
+                                                                              VkLayerProperties* properties);
+    friend VKAPI_ATTR VkResult VKAPI_CALL ::vkEnumerateDeviceExtensionProperties(VkPhysicalDevice physical_device, const char* layer_name,
+                                                                                  uint32_t* property_count,
+                                                                                  VkExtensionProperties* properties);
+#else
     friend VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL (::vkGetInstanceProcAddr)(VkInstance instance, const char* command_name);
     friend VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL (::vkGetDeviceProcAddr)(VkDevice device, const char* command_name);
     friend VKAPI_ATTR VkResult VKAPI_CALL (::vkEnumerateInstanceLayerProperties)(uint32_t* property_count, VkLayerProperties* properties);
@@ -178,6 +211,7 @@ class LayerBase {
     friend VKAPI_ATTR VkResult VKAPI_CALL (::vkEnumerateDeviceExtensionProperties)(VkPhysicalDevice physical_device, const char* layer_name,
                                                                                   uint32_t* property_count,
                                                                                   VkExtensionProperties* properties);
+#endif
 
     friend class LayerBaseTestPeer;
 
