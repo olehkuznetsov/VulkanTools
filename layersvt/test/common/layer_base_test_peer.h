@@ -30,6 +30,15 @@ class LayerBaseTestPeer {
         return LayerBase::GetKnownDeviceCommand(name);
     }
 
+    static VkResult EnumeratePhysicalDevices(VkInstance instance, uint32_t* physical_device_count,
+                                             VkPhysicalDevice* physical_devices) {
+        return LayerBase::EnumeratePhysicalDevices(instance, physical_device_count, physical_devices);
+    }
+
+    static VkResult EnumeratePhysicalDeviceGroups(VkInstance instance, uint32_t* physical_device_group_count,
+                                                  VkPhysicalDeviceGroupProperties* physical_device_group_properties) {
+        return LayerBase::EnumeratePhysicalDeviceGroups(instance, physical_device_group_count, physical_device_group_properties);
+    }
     static VkResult CreateDevice(VkPhysicalDevice physical_device, const VkDeviceCreateInfo* create_info,
                                  const VkAllocationCallbacks* allocator, VkDevice* device) {
         return LayerBase::CreateDevice(physical_device, create_info, allocator, device);

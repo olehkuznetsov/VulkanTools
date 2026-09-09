@@ -47,7 +47,8 @@ class LayerBase {
      * Override to intercept instance-level Vulkan commands.
      *
      * Returns a function pointer to the hook implementation, or nullptr to fall back
-     * to core Vulkan intercepts (e.g. vkCreateInstance, vkDestroyInstance) or downstream dispatch.
+     * to core Vulkan intercepts (e.g. vkCreateInstance, vkDestroyInstance,
+     * vkEnumeratePhysicalDevices) or downstream dispatch.
      */
     virtual PFN_vkVoidFunction GetLayerInstanceCommand(const char* command_name);
 
@@ -100,7 +101,12 @@ class LayerBase {
      */
     virtual void PreDestroyDevice(VkDevice device, const VkAllocationCallbacks* allocator);
 
-    static VkInstance GetVkInstance(VkPhysicalDevice physical_device);
+    /**
+     * Retrieves the parent VkInstance associated with a physical device.
+     * Returns the parent VkInstance on success, or VK_NULL_HANDLE if unregistered.
+     */
+    [[nodiscard]] static VkInstance GetVkInstance(VkPhysicalDevice physical_device);
+
     /**
      * Retrieves the loader data callback for initializing dispatchable handles created by layers.
      * Returns the registered PFN_vkSetDeviceLoaderData on success, or nullptr if unset.
@@ -138,6 +144,10 @@ class LayerBase {
                                               VkInstance* instance);
     static void VKAPI_CALL DestroyInstance(VkInstance instance, const VkAllocationCallbacks* allocator);
 
+    static VkResult VKAPI_CALL EnumeratePhysicalDevices(VkInstance instance, uint32_t* physical_device_count,
+                                                        VkPhysicalDevice* physical_devices);
+    static VkResult VKAPI_CALL EnumeratePhysicalDeviceGroups(VkInstance instance, uint32_t* physical_device_group_count,
+                                                             VkPhysicalDeviceGroupProperties* physical_device_group_properties);
     static VkResult VKAPI_CALL CreateDevice(VkPhysicalDevice physical_device, const VkDeviceCreateInfo* create_info,
                                             const VkAllocationCallbacks* allocator, VkDevice* device);
     static void VKAPI_CALL DestroyDevice(VkDevice device, const VkAllocationCallbacks* allocator);
