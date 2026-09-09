@@ -48,6 +48,19 @@ void DebugMarker::PreCreateInstance(VkInstanceCreateInfo* pCreateInfo, const VkA
     std::call_once(perfetto_initialization_flag, []() { InitializeDebugMarkerPerfetto(); });
 }
 
+void DebugMarker::PreDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator) {
+    (void)pAllocator;
+    std::lock_guard<std::mutex> lock(mutex_);
+    uint64_t dev_handle = (uint64_t)device;
+    for (auto it = debug_object_names_.begin(); it != debug_object_names_.end();) {
+        if (it->second.vk_device == dev_handle) {
+            it = debug_object_names_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 void DebugMarker::SetDebugObjectName(uint64_t device, int32_t type, uint64_t handle, const char* name) {
     std::lock_guard<std::mutex> lock(mutex_);
 

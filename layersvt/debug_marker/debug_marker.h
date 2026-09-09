@@ -48,9 +48,6 @@
  * we write all currently known object names to the trace. We retain the names in memory
  * because a user might start another Perfetto session later, requiring us to emit
  * all object names again.
- * A potential issue exists if an application constantly creates and destroys
- * objects without bound, as we currently do not remove names for destroyed objects.
- * Support for removing names on object destruction can be added later if needed.
  *
  * This class is a singleton, inherits from LayerBase, and provides thread-safe access to its state.
  */
@@ -89,6 +86,11 @@ class DebugMarker : public layersvt::LayerBase {
      * Lifecycle hook called before vkCreateInstance.
      */
     void PreCreateInstance(VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator) override;
+
+    /**
+     * Lifecycle hook called before vkDestroyDevice to remove tracked names for destroyed objects.
+     */
+    void PreDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator) override;
 
     const layersvt::LayerManifest* GetLayerManifest() const override;
     // VK_EXT_debug_marker and VK_EXT_debug_utils are implemented by this layer, so their commands
