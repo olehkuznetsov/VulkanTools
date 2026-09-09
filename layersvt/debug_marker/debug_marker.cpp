@@ -17,7 +17,6 @@
 #include "debug_marker_perfetto.h"
 #include "debug_marker_handwritten_functions_vk_ext_debug_marker.h"
 #include "debug_marker_handwritten_functions_vk_ext_debug_utils.h"
-#include "common/device_instance_tracker.h"
 #include "perfetto/perfetto.h"
 #include <memory>
 
@@ -28,7 +27,7 @@ DebugMarker g_layer;
 DebugMarker::DebugMarker() = default;
 
 const layersvt::LayerManifest* DebugMarker::GetLayerManifest() const {
-    static const layersvt::LayerManifest manifest(layersvt::LayerManifest::Config{
+    static const layersvt::LayerManifest manifest{
         .layer_name = "VK_LAYER_GOOGLE_DebugMarker",
         .description = "layer: DebugMarker",
         .spec_version = VK_MAKE_VERSION(1, 4, VK_HEADER_VERSION),
@@ -42,7 +41,7 @@ const layersvt::LayerManifest* DebugMarker::GetLayerManifest() const {
                 {VK_EXT_DEBUG_MARKER_EXTENSION_NAME, VK_EXT_DEBUG_MARKER_SPEC_VERSION},
             },
         .tool_properties = std::nullopt,
-    });
+    };
     return &manifest;
 }
 
@@ -51,6 +50,19 @@ void DebugMarker::PreCreateInstance(VkInstanceCreateInfo* pCreateInfo, const VkA
     (void)pAllocator;
     static std::once_flag perfetto_initialization_flag;
     std::call_once(perfetto_initialization_flag, []() { InitializeDebugMarkerPerfetto(); });
+}
+
+void DebugMarker::PreDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator) {
+    (void)pAllocator;
+    std::lock_guard<std::mutex> lock(mutex_);
+    uint64_t dev_handle = (uint64_t)device;
+    for (auto it = debug_object_names_.begin(); it != debug_object_names_.end();) {
+        if (it->second.vk_device == dev_handle) {
+            it = debug_object_names_.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void DebugMarker::SetDebugObjectName(uint64_t device, int32_t type, uint64_t handle, const char* name) {

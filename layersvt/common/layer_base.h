@@ -83,36 +83,16 @@ class LayerBase {
     /**
      * Override to provide the layer's metadata, supported extensions, and tool properties.
      * Enables automatic handling of layer and extension property enumeration queries.
-     * Returns the layer's LayerManifest, or nullptr if none is configured.
      */
-    [[nodiscard]] virtual const LayerManifest* GetLayerManifest() const { return nullptr; }
+    [[nodiscard]] virtual const LayerManifest* GetLayerManifest() const;
 
-    // Extension and tooling hooks
-
-    /**
-     * Customizes or filters instance extensions during vkEnumerateInstanceExtensionProperties.
-     */
-    virtual void ProcessInstanceExtensions(const char* layer_name,
-                                           std::vector<VkExtensionProperties>& extensions) const;
+    // Extension hooks
 
     /**
      * Customizes or filters device extensions during vkEnumerateDeviceExtensionProperties.
      */
     virtual void ProcessDeviceExtensions(VkPhysicalDevice physical_device, const char* layer_name,
                                          std::vector<VkExtensionProperties>& extensions) const;
-
-    /**
-     * Customizes or filters tool properties during vkGetPhysicalDeviceToolProperties.
-     */
-    virtual void ProcessToolProperties(VkPhysicalDevice physical_device,
-                                       std::vector<VkPhysicalDeviceToolPropertiesEXT>& tools) const;
-
-    /**
-     * Indicates whether this layer intercepts physical device tool properties.
-     * Default implementation returns true if the layer manifest defines tool_properties.
-     * Returns true if tool properties queries should be intercepted, or false to dispatch downstream.
-     */
-    [[nodiscard]] virtual bool HasToolProperties() const;
 
     // Layer-specific command intercepts
 
@@ -175,9 +155,6 @@ class LayerBase {
     virtual void PreDestroyDevice(VkDevice device, const VkAllocationCallbacks* allocator);
 
    private:
-    [[nodiscard]] DispatchTableManager& GetDispatchTableManager() noexcept { return dispatch_table_manager_; }
-    [[nodiscard]] const DispatchTableManager& GetDispatchTableManager() const noexcept { return dispatch_table_manager_; }
-
     [[nodiscard]] static VkuInstanceDispatchTable* GetInstanceDispatchTable(VkInstance instance);
     [[nodiscard]] static VkuInstanceDispatchTable* GetInstanceDispatchTable(VkPhysicalDevice physical_device);
     [[nodiscard]] static VkuDeviceDispatchTable* GetDeviceDispatchTable(const void* object);
@@ -245,14 +222,8 @@ class LayerBase {
                                                               VkLayerProperties* properties);
     static VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(VkPhysicalDevice physical_device, const char* layer_name,
                                                                   uint32_t* property_count, VkExtensionProperties* properties);
-    static VkResult EnumerateDeviceExtensionPropertiesWithDownstream(
-        VkPhysicalDevice physical_device, const char* layer_name, uint32_t* property_count,
-        VkExtensionProperties* properties, PFN_vkEnumerateDeviceExtensionProperties downstream_function);
     static VkResult VKAPI_CALL GetPhysicalDeviceToolProperties(VkPhysicalDevice physical_device, uint32_t* tool_count,
                                                                VkPhysicalDeviceToolPropertiesEXT* tool_properties);
-    static VkResult GetPhysicalDeviceToolPropertiesWithDownstream(
-        VkPhysicalDevice physical_device, uint32_t* tool_count, VkPhysicalDeviceToolPropertiesEXT* tool_properties,
-        PFN_vkGetPhysicalDeviceToolPropertiesEXT downstream_function);
 
     static PFN_vkVoidFunction GetKnownInstanceCommand(const char* command_name);
     static PFN_vkVoidFunction GetKnownDeviceCommand(const char* command_name);

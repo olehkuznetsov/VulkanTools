@@ -25,14 +25,13 @@ VkuInstanceDispatchTable* DispatchTableManager::InitInstanceTable(VkInstance ins
                                                                   PFN_vkGetInstanceProcAddr get_instance_proc_addr) {
     assert(instance != VK_NULL_HANDLE);
     assert(get_instance_proc_addr != nullptr);
-    auto table = std::make_unique<VkuInstanceDispatchTable>();
-    vkuInitInstanceDispatchTable(instance, table.get(), get_instance_proc_addr);
 
     Key key = GetDispatchKey(instance);
     std::lock_guard<std::mutex> lock(instance_mutex_);
-    auto [iterator, inserted] = instance_tables_.try_emplace(key, std::move(table));
-    instance_keys_[key] = instance;
-    return iterator->second.get();
+    auto [iterator, inserted] = instances_.try_emplace(key);
+    iterator->second.instance = instance;
+    vkuInitInstanceDispatchTable(instance, &iterator->second.table, get_instance_proc_addr);
+    return &iterator->second.table;
 }
 
 VkuInstanceDispatchTable* DispatchTableManager::GetInstanceDispatchTable(VkInstance instance) const {
@@ -41,9 +40,9 @@ VkuInstanceDispatchTable* DispatchTableManager::GetInstanceDispatchTable(VkInsta
     }
     Key key = GetDispatchKey(instance);
     std::lock_guard<std::mutex> lock(instance_mutex_);
-    auto table_iterator = instance_tables_.find(key);
-    if (table_iterator != instance_tables_.end()) {
-        return table_iterator->second.get();
+    auto table_iterator = instances_.find(key);
+    if (table_iterator != instances_.end()) {
+        return const_cast<VkuInstanceDispatchTable*>(&table_iterator->second.table);
     }
     return nullptr;
 }
@@ -56,9 +55,9 @@ VkuInstanceDispatchTable* DispatchTableManager::GetInstanceDispatchTable(VkPhysi
     auto device_iterator = physical_device_to_instance_map_.find(physical_device);
     if (device_iterator != physical_device_to_instance_map_.end()) {
         Key instance_key = GetDispatchKey(device_iterator->second);
-        auto table_iterator = instance_tables_.find(instance_key);
-        if (table_iterator != instance_tables_.end()) {
-            return table_iterator->second.get();
+        auto table_iterator = instances_.find(instance_key);
+        if (table_iterator != instances_.end()) {
+            return const_cast<VkuInstanceDispatchTable*>(&table_iterator->second.table);
         }
     }
     return nullptr;
@@ -67,21 +66,13 @@ VkuInstanceDispatchTable* DispatchTableManager::GetInstanceDispatchTable(VkPhysi
 void DispatchTableManager::DestroyInstanceTable(Key key) {
     assert(key != Key{});
     std::lock_guard<std::mutex> lock(instance_mutex_);
-    auto key_iterator = instance_keys_.find(key);
-    if (key_iterator != instance_keys_.end()) {
-        VkInstance instance = key_iterator->second;
+    auto iterator = instances_.find(key);
+    if (iterator != instances_.end()) {
+        VkInstance instance = iterator->second.instance;
         std::erase_if(physical_device_to_instance_map_,
                       [instance](const auto& entry) { return entry.second == instance; });
-        instance_keys_.erase(key_iterator);
+        instances_.erase(iterator);
     }
-    instance_tables_.erase(key);
-}
-
-void DispatchTableManager::SetVkInstance(VkPhysicalDevice physical_device, VkInstance instance) {
-    assert(physical_device != VK_NULL_HANDLE);
-    assert(instance != VK_NULL_HANDLE);
-    std::lock_guard<std::mutex> lock(instance_mutex_);
-    physical_device_to_instance_map_[physical_device] = instance;
 }
 
 void DispatchTableManager::RegisterPhysicalDevices(const VkPhysicalDevice* physical_devices, uint32_t count,
@@ -112,13 +103,12 @@ VkInstance DispatchTableManager::GetVkInstance(VkPhysicalDevice physical_device)
 VkuDeviceDispatchTable* DispatchTableManager::InitDeviceTable(VkDevice device, PFN_vkGetDeviceProcAddr get_device_proc_addr) {
     assert(device != VK_NULL_HANDLE);
     assert(get_device_proc_addr != nullptr);
-    auto table = std::make_unique<VkuDeviceDispatchTable>();
-    vkuInitDeviceDispatchTable(device, table.get(), get_device_proc_addr);
 
     Key key = GetDispatchKey(device);
     std::lock_guard<std::mutex> lock(device_mutex_);
-    auto [iterator, inserted] = device_tables_.try_emplace(key, std::move(table));
-    return iterator->second.get();
+    auto [iterator, inserted] = device_entries_.try_emplace(key);
+    vkuInitDeviceDispatchTable(device, &iterator->second.table, get_device_proc_addr);
+    return &iterator->second.table;
 }
 
 VkuDeviceDispatchTable* DispatchTableManager::GetDeviceDispatchTable(const void* object) const {
@@ -127,9 +117,9 @@ VkuDeviceDispatchTable* DispatchTableManager::GetDeviceDispatchTable(const void*
     }
     Key key = GetDispatchKey(object);
     std::lock_guard<std::mutex> lock(device_mutex_);
-    auto table_iterator = device_tables_.find(key);
-    if (table_iterator != device_tables_.end()) {
-        return table_iterator->second.get();
+    auto table_iterator = device_entries_.find(key);
+    if (table_iterator != device_entries_.end()) {
+        return const_cast<VkuDeviceDispatchTable*>(&table_iterator->second.table);
     }
     return nullptr;
 }
@@ -137,8 +127,7 @@ VkuDeviceDispatchTable* DispatchTableManager::GetDeviceDispatchTable(const void*
 void DispatchTableManager::DestroyDeviceTable(Key key) {
     assert(key != Key{});
     std::lock_guard<std::mutex> lock(device_mutex_);
-    device_tables_.erase(key);
-    loader_callbacks_.erase(key);
+    device_entries_.erase(key);
 }
 
 void DispatchTableManager::SetDeviceLoaderDataCallback(VkDevice device, PFN_vkSetDeviceLoaderData callback) {
@@ -146,16 +135,16 @@ void DispatchTableManager::SetDeviceLoaderDataCallback(VkDevice device, PFN_vkSe
     assert(callback != nullptr);
     Key key = GetDispatchKey(device);
     std::lock_guard<std::mutex> lock(device_mutex_);
-    loader_callbacks_[key] = callback;
+    device_entries_[key].loader_callback = callback;
 }
 
 PFN_vkSetDeviceLoaderData DispatchTableManager::GetDeviceLoaderDataCallback(VkDevice device) const {
     assert(device != VK_NULL_HANDLE);
     Key key = GetDispatchKey(device);
     std::lock_guard<std::mutex> lock(device_mutex_);
-    auto callback_iterator = loader_callbacks_.find(key);
-    if (callback_iterator != loader_callbacks_.end()) {
-        return callback_iterator->second;
+    auto callback_iterator = device_entries_.find(key);
+    if (callback_iterator != device_entries_.end()) {
+        return callback_iterator->second.loader_callback;
     }
     return nullptr;
 }

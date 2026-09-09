@@ -69,13 +69,6 @@ class DispatchTableManager final {
     [[nodiscard]] VkuInstanceDispatchTable* GetInstanceDispatchTable(VkPhysicalDevice physical_device) const;
 
     /**
-     * Overload for nullptr literal to resolve ambiguity between handle types. Always returns nullptr.
-     */
-    [[nodiscard]] VkuInstanceDispatchTable* GetInstanceDispatchTable(std::nullptr_t) const noexcept {
-        return nullptr;
-    }
-
-    /**
      * Destroys the instance dispatch table and unmaps associated physical devices for the given dispatch key.
      * Callers should capture the Key beforehand via GetDispatchKey(...) before
      * downstream vkDestroyInstance invalidates the handle.
@@ -83,11 +76,6 @@ class DispatchTableManager final {
     void DestroyInstanceTable(Key key);
 
     // Physical device tracking
-
-    /**
-     * Associates a physical device handle with its parent VkInstance.
-     */
-    void SetVkInstance(VkPhysicalDevice physical_device, VkInstance instance);
 
     /**
      * Associates multiple physical device handles with their parent VkInstance in a single atomic lock.
@@ -135,19 +123,27 @@ class DispatchTableManager final {
     [[nodiscard]] PFN_vkSetDeviceLoaderData GetDeviceLoaderDataCallback(VkDevice device) const;
 
    private:
+    struct InstanceEntry {
+        VkInstance instance = VK_NULL_HANDLE;
+        VkuInstanceDispatchTable table{};
+    };
+
+    struct DeviceEntry {
+        VkuDeviceDispatchTable table{};
+        PFN_vkSetDeviceLoaderData loader_callback = nullptr;
+    };
+
     DispatchTableManager(const DispatchTableManager&) = delete;
     DispatchTableManager& operator=(const DispatchTableManager&) = delete;
     DispatchTableManager(DispatchTableManager&&) = delete;
     DispatchTableManager& operator=(DispatchTableManager&&) = delete;
 
     mutable std::mutex instance_mutex_;
-    std::unordered_map<Key, std::unique_ptr<VkuInstanceDispatchTable>> instance_tables_;
-    std::unordered_map<Key, VkInstance> instance_keys_;
+    std::unordered_map<Key, InstanceEntry> instances_;
     std::unordered_map<VkPhysicalDevice, VkInstance> physical_device_to_instance_map_;
 
     mutable std::mutex device_mutex_;
-    std::unordered_map<Key, std::unique_ptr<VkuDeviceDispatchTable>> device_tables_;
-    std::unordered_map<Key, PFN_vkSetDeviceLoaderData> loader_callbacks_;
+    std::unordered_map<Key, DeviceEntry> device_entries_;
 };
 
 }  // namespace layersvt

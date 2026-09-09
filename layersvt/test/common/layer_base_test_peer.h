@@ -64,8 +64,19 @@ class LayerBaseTestPeer {
         VkExtensionProperties* properties,
         PFN_vkEnumerateDeviceExtensionProperties downstream_function = nullptr) {
         if (downstream_function != nullptr) {
-            return LayerBase::EnumerateDeviceExtensionPropertiesWithDownstream(
-                physical_device, layer_name, property_count, properties, downstream_function);
+            static void* mock_instance_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0xF00D));
+            auto mock_instance = reinterpret_cast<VkInstance>(&mock_instance_vtable);
+            static void* mock_phys_dev_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0xBAAD));
+            if (physical_device == VK_NULL_HANDLE) {
+                physical_device = reinterpret_cast<VkPhysicalDevice>(&mock_phys_dev_vtable);
+            }
+            LayerBase* layer = LayerBase::Get();
+            if (layer != nullptr) {
+                VkuInstanceDispatchTable* table = layer->dispatch_table_manager_.InitInstanceTable(
+                    mock_instance, [](VkInstance, const char*) -> PFN_vkVoidFunction { return nullptr; });
+                table->EnumerateDeviceExtensionProperties = downstream_function;
+                layer->dispatch_table_manager_.RegisterPhysicalDevices(&physical_device, 1, mock_instance);
+            }
         }
         return LayerBase::EnumerateDeviceExtensionProperties(
             physical_device, layer_name, property_count, properties);
@@ -75,15 +86,26 @@ class LayerBaseTestPeer {
         VkPhysicalDeviceToolPropertiesEXT* tool_properties,
         PFN_vkGetPhysicalDeviceToolPropertiesEXT downstream_function = nullptr) {
         if (downstream_function != nullptr) {
-            return LayerBase::GetPhysicalDeviceToolPropertiesWithDownstream(
-                physical_device, tool_count, tool_properties, downstream_function);
+            static void* mock_instance_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0xF00D));
+            auto mock_instance = reinterpret_cast<VkInstance>(&mock_instance_vtable);
+            static void* mock_phys_dev_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0xBAAD));
+            if (physical_device == VK_NULL_HANDLE) {
+                physical_device = reinterpret_cast<VkPhysicalDevice>(&mock_phys_dev_vtable);
+            }
+            LayerBase* layer = LayerBase::Get();
+            if (layer != nullptr) {
+                VkuInstanceDispatchTable* table = layer->dispatch_table_manager_.InitInstanceTable(
+                    mock_instance, [](VkInstance, const char*) -> PFN_vkVoidFunction { return nullptr; });
+                table->GetPhysicalDeviceToolPropertiesEXT = downstream_function;
+                layer->dispatch_table_manager_.RegisterPhysicalDevices(&physical_device, 1, mock_instance);
+            }
         }
         return LayerBase::GetPhysicalDeviceToolProperties(
             physical_device, tool_count, tool_properties);
     }
     static const LayerManifest* GetLayerManifest(const LayerBase& layer) { return layer.GetLayerManifest(); }
-    static DispatchTableManager& GetDispatchTableManager(LayerBase& layer) { return layer.GetDispatchTableManager(); }
-    static const DispatchTableManager& GetDispatchTableManager(const LayerBase& layer) { return layer.GetDispatchTableManager(); }
+    static DispatchTableManager& GetDispatchTableManager(LayerBase& layer) { return layer.dispatch_table_manager_; }
+    static const DispatchTableManager& GetDispatchTableManager(const LayerBase& layer) { return layer.dispatch_table_manager_; }
 
     static VkInstance GetVkInstance(VkPhysicalDevice physical_device) { return LayerBase::GetVkInstance(physical_device); }
 

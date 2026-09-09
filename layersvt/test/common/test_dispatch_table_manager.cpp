@@ -167,8 +167,8 @@ TEST(DispatchTableManagerTest, BasicPhysicalDeviceTracking) {
 
     EXPECT_EQ(dispatch_table_manager.GetVkInstance(mock_physical_device1), VK_NULL_HANDLE);
 
-    dispatch_table_manager.SetVkInstance(mock_physical_device1, mock_instance);
-    dispatch_table_manager.SetVkInstance(mock_physical_device2, mock_instance);
+    VkPhysicalDevice physical_devices[] = {mock_physical_device1, mock_physical_device2};
+    dispatch_table_manager.RegisterPhysicalDevices(physical_devices, 2, mock_instance);
 
     EXPECT_EQ(dispatch_table_manager.GetVkInstance(mock_physical_device1), mock_instance);
     EXPECT_EQ(dispatch_table_manager.GetVkInstance(mock_physical_device2), mock_instance);
@@ -204,7 +204,7 @@ TEST(DispatchTableManagerTest, PhysicalDeviceResolvesInstanceDispatchTable) {
         mock_instance, [](VkInstance, const char*) -> PFN_vkVoidFunction { return nullptr; });
     EXPECT_NE(instance_table, nullptr);
 
-    dispatch_table_manager.SetVkInstance(mock_physical_device, mock_instance);
+    dispatch_table_manager.RegisterPhysicalDevices(&mock_physical_device, 1, mock_instance);
 
     EXPECT_EQ(dispatch_table_manager.GetInstanceDispatchTable(mock_physical_device), instance_table);
 }
@@ -221,8 +221,8 @@ TEST(DispatchTableManagerTest, AtomicTeardownOfPhysicalDevicesOnInstanceDestroy)
         mock_instance, [](VkInstance, const char*) -> PFN_vkVoidFunction { return nullptr; });
     ASSERT_NE(instance_table, nullptr);
 
-    dispatch_table_manager.SetVkInstance(mock_physical_device1, mock_instance);
-    dispatch_table_manager.SetVkInstance(mock_physical_device2, mock_instance);
+    VkPhysicalDevice physical_devices[] = {mock_physical_device1, mock_physical_device2};
+    dispatch_table_manager.RegisterPhysicalDevices(physical_devices, 2, mock_instance);
 
     EXPECT_EQ(dispatch_table_manager.GetVkInstance(mock_physical_device1), mock_instance);
     EXPECT_EQ(dispatch_table_manager.GetVkInstance(mock_physical_device2), mock_instance);
@@ -243,7 +243,6 @@ TEST(DispatchTableManagerTest, NullHandleSafety) {
     EXPECT_EQ(dispatch_table_manager.GetVkInstance(VK_NULL_HANDLE), VK_NULL_HANDLE);
     EXPECT_EQ(dispatch_table_manager.GetInstanceDispatchTable(static_cast<VkInstance>(VK_NULL_HANDLE)), nullptr);
     EXPECT_EQ(dispatch_table_manager.GetInstanceDispatchTable(static_cast<VkPhysicalDevice>(VK_NULL_HANDLE)), nullptr);
-    EXPECT_EQ(dispatch_table_manager.GetInstanceDispatchTable(nullptr), nullptr);
     EXPECT_EQ(dispatch_table_manager.GetDeviceDispatchTable(static_cast<const void*>(nullptr)), nullptr);
 }
 
@@ -283,8 +282,8 @@ TEST(DispatchTableManagerTest, ConcurrentPhysicalDevicesAndLifecycle) {
                     my_data.instance, [](VkInstance, const char*) -> PFN_vkVoidFunction { return nullptr; });
                 EXPECT_NE(instance_table, nullptr);
 
-                dispatch_table_manager.SetVkInstance(my_data.physical_device1, my_data.instance);
-                dispatch_table_manager.SetVkInstance(my_data.physical_device2, my_data.instance);
+                VkPhysicalDevice thread_devices[] = {my_data.physical_device1, my_data.physical_device2};
+                dispatch_table_manager.RegisterPhysicalDevices(thread_devices, 2, my_data.instance);
 
                 EXPECT_EQ(dispatch_table_manager.GetVkInstance(my_data.physical_device1), my_data.instance);
                 EXPECT_EQ(dispatch_table_manager.GetInstanceDispatchTable(my_data.physical_device1), instance_table);

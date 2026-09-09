@@ -238,7 +238,7 @@ TEST(LayerBaseTest, PreCreateDeviceMutation) {
     auto mock_physical_device = reinterpret_cast<VkPhysicalDevice>(static_cast<uintptr_t>(0x5555));
 
     MutatingLayer layer;
-    LayerBaseTestPeer::GetDispatchTableManager(layer).SetVkInstance(mock_physical_device, mock_instance);
+    LayerBaseTestPeer::GetDispatchTableManager(layer).RegisterPhysicalDevices(&mock_physical_device, 1, mock_instance);
     VkDevice device = VK_NULL_HANDLE;
 
     EXPECT_EQ(LayerBaseTestPeer::CreateDevice(mock_physical_device, &device_create_info, nullptr, &device), VK_SUCCESS);
@@ -270,7 +270,7 @@ TEST(LayerBaseTest, TeardownOrdering) {
             }
             return nullptr;
         });
-    LayerBaseTestPeer::GetDispatchTableManager(layer).SetVkInstance(mock_physical_device, mock_instance);
+    LayerBaseTestPeer::GetDispatchTableManager(layer).RegisterPhysicalDevices(&mock_physical_device, 1, mock_instance);
 
     LayerBaseTestPeer::DestroyInstance(mock_instance, nullptr);
 
@@ -318,7 +318,7 @@ TEST(LayerBaseTest, CreateDeviceWithMockChain) {
     device_create_info.pNext = &callback_info;
 
     LifecycleTestLayer layer;
-    LayerBaseTestPeer::GetDispatchTableManager(layer).SetVkInstance(mock_physical_device, mock_instance);
+    LayerBaseTestPeer::GetDispatchTableManager(layer).RegisterPhysicalDevices(&mock_physical_device, 1, mock_instance);
     VkDevice device = VK_NULL_HANDLE;
 
     VkAllocationCallbacks mock_allocator{};
@@ -343,7 +343,7 @@ TEST(LayerBaseTest, CreateDeviceNullHandling) {
     void* mock_instance_vtable = reinterpret_cast<void*>(static_cast<uintptr_t>(0x11223344));
     auto mock_instance = reinterpret_cast<VkInstance>(&mock_instance_vtable);
     auto mock_physical_device = reinterpret_cast<VkPhysicalDevice>(static_cast<uintptr_t>(0x5555));
-    LayerBaseTestPeer::GetDispatchTableManager(layer).SetVkInstance(mock_physical_device, mock_instance);
+    LayerBaseTestPeer::GetDispatchTableManager(layer).RegisterPhysicalDevices(&mock_physical_device, 1, mock_instance);
 
     // Null create info
     EXPECT_EQ(LayerBaseTestPeer::CreateDevice(mock_physical_device, nullptr, nullptr, &device),
@@ -548,7 +548,7 @@ TEST(LayerBaseTest, CreateDeviceNullFpCreateDevice) {
     auto mock_physical_device = reinterpret_cast<VkPhysicalDevice>(static_cast<uintptr_t>(0x5555));
 
     LifecycleTestLayer layer;
-    LayerBaseTestPeer::GetDispatchTableManager(layer).SetVkInstance(mock_physical_device, mock_instance);
+    LayerBaseTestPeer::GetDispatchTableManager(layer).RegisterPhysicalDevices(&mock_physical_device, 1, mock_instance);
 
     static PFN_vkGetInstanceProcAddr mock_get_instance_proc_addr = [](VkInstance, const char*) -> PFN_vkVoidFunction {
         return nullptr;
@@ -740,7 +740,7 @@ TEST(LayerBaseTest, PhysicalDeviceResolvesInstanceTable) {
     auto mock_physical_device = reinterpret_cast<VkPhysicalDevice>(&mock_physical_device_vtable);
 
     LayerBase layer;
-    LayerBaseTestPeer::GetDispatchTableManager(layer).SetVkInstance(mock_physical_device, mock_instance);
+    LayerBaseTestPeer::GetDispatchTableManager(layer).RegisterPhysicalDevices(&mock_physical_device, 1, mock_instance);
     LayerBaseTestPeer::GetDispatchTableManager(layer).InitInstanceTable(
         mock_instance, [](VkInstance, const char*) -> PFN_vkVoidFunction { return nullptr; });
 

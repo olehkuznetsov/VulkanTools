@@ -18,42 +18,7 @@
 #include <vulkan/vulkan_core.h>
 #include <gtest/gtest.h>
 #include <stdlib.h>
-
-namespace layersvt {
-class LayerBaseTestPeer {
-   public:
-    static PFN_vkVoidFunction GetKnownInstanceCommand(const char* name) {
-        return LayerBase::GetKnownInstanceCommand(name);
-    }
-    static PFN_vkVoidFunction GetKnownDeviceCommand(const char* name) {
-        return LayerBase::GetKnownDeviceCommand(name);
-    }
-    static PFN_vkVoidFunction GetInstanceProcAddr(VkInstance instance, const char* name) {
-        return LayerBase::GetInstanceProcAddr(instance, name);
-    }
-    static PFN_vkVoidFunction GetDeviceProcAddr(VkDevice device, const char* name) {
-        return LayerBase::GetDeviceProcAddr(device, name);
-    }
-    static VkResult EnumerateInstanceExtensionProperties(const char* layer_name, uint32_t* property_count,
-                                                         VkExtensionProperties* properties) {
-        return LayerBase::EnumerateInstanceExtensionProperties(layer_name, property_count, properties);
-    }
-    static VkResult EnumerateInstanceLayerProperties(uint32_t* property_count, VkLayerProperties* properties) {
-        return LayerBase::EnumerateInstanceLayerProperties(property_count, properties);
-    }
-    static VkResult EnumerateDeviceLayerProperties(VkPhysicalDevice physical_device, uint32_t* property_count,
-                                                   VkLayerProperties* properties) {
-        return LayerBase::EnumerateDeviceLayerProperties(physical_device, property_count, properties);
-    }
-    static VkResult EnumerateDeviceExtensionProperties(VkPhysicalDevice physical_device, const char* layer_name,
-                                                       uint32_t* property_count, VkExtensionProperties* properties) {
-        return LayerBase::EnumerateDeviceExtensionProperties(physical_device, layer_name, property_count, properties);
-    }
-    static DeviceInstanceTracker& GetDeviceTracker(LayerBase& layer) {
-        return layer.GetDeviceTracker();
-    }
-};
-}  // namespace layersvt
+#include "test/common/layer_base_test_peer.h"
 
 static const char* kLayerName = "VK_LAYER_GOOGLE_DebugMarker";
 
@@ -160,11 +125,47 @@ TEST_F(DebugMarkerTests, LayerBaseLifecycleAndTrackerTest) {
     VkPhysicalDevice mock_physical_device = reinterpret_cast<VkPhysicalDevice>(0x1234);
     VkInstance mock_instance = reinterpret_cast<VkInstance>(0x5678);
 
-    layersvt::LayerBaseTestPeer::GetDeviceTracker(DebugMarker::Get()).SetVkInstance(mock_physical_device, mock_instance);
-    EXPECT_EQ(layersvt::LayerBaseTestPeer::GetDeviceTracker(DebugMarker::Get()).GetVkInstance(mock_physical_device), mock_instance);
+    layersvt::LayerBaseTestPeer::GetDispatchTableManager(DebugMarker::Get()).RegisterPhysicalDevices(&mock_physical_device, 1, mock_instance);
+    EXPECT_EQ(layersvt::LayerBaseTestPeer::GetVkInstance(mock_physical_device), mock_instance);
 
     layer_test::ResetLayer<DebugMarker>();
-    EXPECT_EQ(layersvt::LayerBaseTestPeer::GetDeviceTracker(DebugMarker::Get()).GetVkInstance(mock_physical_device), VK_NULL_HANDLE);
+    EXPECT_EQ(layersvt::LayerBaseTestPeer::GetVkInstance(mock_physical_device), VK_NULL_HANDLE);
+}
+
+TEST_F(DebugMarkerTests, PreDestroyDeviceCleanupTest) {
+    TEST_DESCRIPTION("Verify that DestroyDevice cleans up tracked objects associated with that device");
+
+    layer_test::ResetLayer<DebugMarker>();
+
+    void* mock_dev1_vtable = reinterpret_cast<void*>(0x1000);
+    VkDevice dev1 = reinterpret_cast<VkDevice>(&mock_dev1_vtable);
+    void* mock_dev2_vtable = reinterpret_cast<void*>(0x2000);
+    VkDevice dev2 = reinterpret_cast<VkDevice>(&mock_dev2_vtable);
+
+    layersvt::LayerBaseTestPeer::GetDispatchTableManager(DebugMarker::Get()).InitDeviceTable(
+        dev1, [](VkDevice, const char*) -> PFN_vkVoidFunction {
+            return reinterpret_cast<PFN_vkVoidFunction>(+[](VkDevice, const VkAllocationCallbacks*) {});
+        });
+    layersvt::LayerBaseTestPeer::GetDispatchTableManager(DebugMarker::Get()).InitDeviceTable(
+        dev2, [](VkDevice, const char*) -> PFN_vkVoidFunction {
+            return reinterpret_cast<PFN_vkVoidFunction>(+[](VkDevice, const VkAllocationCallbacks*) {});
+        });
+
+    DebugMarker::Get().SetDebugObjectName((uint64_t)dev1, VK_OBJECT_TYPE_BUFFER, 0x1111, "Buffer1");
+    DebugMarker::Get().SetDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2");
+
+    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(VK_OBJECT_TYPE_BUFFER, 0x1111, "Buffer1"));
+    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2"));
+
+    // Destroy dev1 - should remove Buffer1 but keep Buffer2
+    layersvt::LayerBaseTestPeer::DestroyDevice(dev1, nullptr);
+
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(VK_OBJECT_TYPE_BUFFER, 0x1111, "Buffer1"));
+    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2"));
+
+    // Destroy dev2 - should remove Buffer2
+    layersvt::LayerBaseTestPeer::DestroyDevice(dev2, nullptr);
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2"));
 }
 
 TEST_F(DebugMarkerTests, TemplateMethodDispatchTest) {

@@ -261,6 +261,10 @@ foreach(layer ${TOOL_LAYERS})
 
     target_link_Libraries(${layer} PRIVATE Vulkan::Headers Vulkan::UtilityHeaders Vulkan::LayerSettings)
 
+    if (CMAKE_SYSTEM_NAME MATCHES "Linux|BSD|DragonFly|GNU")
+        target_link_options(${layer} PRIVATE -Wl,-Bsymbolic-functions)
+    endif()
+
     if (ANDROID)
         target_link_Libraries(${layer} PRIVATE log android atomic)
     endif()

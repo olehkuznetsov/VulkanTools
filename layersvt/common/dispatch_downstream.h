@@ -90,17 +90,4 @@ inline auto DispatchDownstreamOr(Fallback&& fallback, Handle handle, Args&&... a
     }
 }
 
-/**
- * Forwards an optional Vulkan command returning VkResult downstream, falling back to VK_SUCCESS.
- * Returns the downstream VkResult on success, or VK_SUCCESS if the downstream command is unavailable.
- */
-template <auto MemberPointer, typename Handle, typename... Args>
-inline VkResult DispatchDownstreamOrSuccess(Handle handle, Args&&... args) {
-    using TableType = typename MemberTraits<decltype(MemberPointer)>::ClassType;
-    using ReturnType = decltype((std::declval<TableType*>()->*MemberPointer)(handle, std::forward<Args>(args)...));
-    static_assert(std::is_same_v<ReturnType, VkResult>,
-                  "DispatchDownstreamOrSuccess can only be used with Vulkan commands returning VkResult");
-    return DispatchDownstreamOr<MemberPointer>(VK_SUCCESS, handle, std::forward<Args>(args)...);
-}
-
 }  // namespace layersvt

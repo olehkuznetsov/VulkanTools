@@ -31,13 +31,13 @@ TEST(DispatchDownstreamTest, DispatchDownstream) {
     auto mock_device = reinterpret_cast<VkDevice>(&mock_device_vtable);
 
     // 1. Unregistered handles (no dispatch table present)
-    // DispatchDownstreamOrSuccess returns VK_SUCCESS fallback for VkResult commands
+    // DispatchDownstreamOr with VK_SUCCESS fallback for VkResult commands
     uint32_t count = 0;
     VkResult instance_result =
-        DispatchDownstreamOrSuccess<&VkuInstanceDispatchTable::EnumeratePhysicalDevices>(mock_instance, &count, nullptr);
+        DispatchDownstreamOr<&VkuInstanceDispatchTable::EnumeratePhysicalDevices>(VK_SUCCESS, mock_instance, &count, nullptr);
     EXPECT_EQ(instance_result, VK_SUCCESS);
 
-    VkResult device_result = DispatchDownstreamOrSuccess<&VkuDeviceDispatchTable::DeviceWaitIdle>(mock_device);
+    VkResult device_result = DispatchDownstreamOr<&VkuDeviceDispatchTable::DeviceWaitIdle>(VK_SUCCESS, mock_device);
     EXPECT_EQ(device_result, VK_SUCCESS);
 
     // void return type safely no-ops with DispatchDownstreamOr
@@ -53,9 +53,9 @@ TEST(DispatchDownstreamTest, DispatchDownstream) {
     dispatch_table_manager.InitInstanceTable(mock_instance, [](VkInstance, const char*) -> PFN_vkVoidFunction { return nullptr; });
     dispatch_table_manager.InitDeviceTable(mock_device, [](VkDevice, const char*) -> PFN_vkVoidFunction { return nullptr; });
 
-    EXPECT_EQ((DispatchDownstreamOrSuccess<&VkuInstanceDispatchTable::EnumeratePhysicalDevices>(mock_instance, &count, nullptr)),
+    EXPECT_EQ((DispatchDownstreamOr<&VkuInstanceDispatchTable::EnumeratePhysicalDevices>(VK_SUCCESS, mock_instance, &count, nullptr)),
               VK_SUCCESS);
-    EXPECT_EQ((DispatchDownstreamOrSuccess<&VkuDeviceDispatchTable::DeviceWaitIdle>(mock_device)), VK_SUCCESS);
+    EXPECT_EQ((DispatchDownstreamOr<&VkuDeviceDispatchTable::DeviceWaitIdle>(VK_SUCCESS, mock_device)), VK_SUCCESS);
     DispatchDownstreamOr<&VkuInstanceDispatchTable::DestroyInstance>([] {}, mock_instance, nullptr);
     DispatchDownstreamOr<&VkuDeviceDispatchTable::DestroyDevice>([] {}, mock_device, nullptr);
 
@@ -101,7 +101,7 @@ TEST(DispatchDownstreamTest, DispatchDownstream) {
         [] {}, mock_physical_device, &properties);
 
     // Mapped physical device forwards downstream through instance table
-    dispatch_table_manager.SetVkInstance(mock_physical_device, mock_instance);
+    dispatch_table_manager.RegisterPhysicalDevices(&mock_physical_device, 1, mock_instance);
 
     static bool physical_device_function_called = false;
     physical_device_function_called = false;

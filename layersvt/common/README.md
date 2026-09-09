@@ -53,7 +53,7 @@ The `layersvt_common` library provides a modern, thread-safe C++ foundation for 
 * **`DispatchTableManager`** ([`dispatch_table_manager.h`](dispatch_table_manager.h), [`dispatch_table_manager.cpp`](dispatch_table_manager.cpp)):
   Thread-safe registry for `VkuInstanceDispatchTable` and `VkuDeviceDispatchTable` keyed by dispatchable handle. Incorporates native `VkPhysicalDevice` to parent `VkInstance` tracking and single-lock atomic teardown during instance destruction. Tracks and forwards `VK_LOADER_DATA_CALLBACK` to initialize dispatchable handles created internally by layers.
 * **`dispatch_downstream.h`** ([`dispatch_downstream.h`](dispatch_downstream.h)):
-  Header-only template metaprogramming helpers (`DispatchDownstream`, `DispatchDownstreamOr`, `DispatchDownstreamOrSuccess`) that deduce table types at compile time and forward commands downstream.
+  Header-only template metaprogramming helpers (`DispatchDownstream`, `DispatchDownstreamOr`) that deduce table types at compile time and forward commands downstream.
 * **`layersvt_entrypoints`** ([`layer_entrypoints.cpp`](layer_entrypoints.cpp)):
   CMake `OBJECT` library that exports standard C symbols (`vkGetInstanceProcAddr`, `vkGetDeviceProcAddr`, `vkNegotiateLoaderLayerInterfaceVersion`, and the four Android loader enumeration entry points) without macro duplication.
 

@@ -22,20 +22,6 @@
 #include <cassert>
 #include <cstring>
 
-#if defined(_WIN32)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#include <stdlib.h>
-#if !defined(NDEBUG)
-#include <crtdbg.h>
-#endif
-#endif
-
 namespace layersvt {
 
 namespace {
@@ -87,24 +73,9 @@ VkResult CopyEnumerationProperties(const std::vector<T>& items, uint32_t* proper
     return (copy_count < total) ? VK_INCOMPLETE : VK_SUCCESS;
 }
 
-#if defined(_WIN32)
-void InitPlatformErrorHandling() {
-#if !defined(NDEBUG)
-    _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
-    _CrtSetReportFile(_CRT_WARN, _CRTDBG_FILE_STDERR);
-    _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
-    _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
-#endif
-    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
-    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
-}
-#endif
 }  // namespace
 
 LayerBase::LayerBase() {
-#if defined(_WIN32)
-    InitPlatformErrorHandling();
-#endif
     layer_ = this;
 }
 
@@ -287,9 +258,7 @@ VkResult LayerBase::EnumerateInstanceExtensionProperties(const char* layer_name,
 
     LayerBase* layer = Get();
     const LayerManifest* manifest = layer->GetLayerManifest();
-    if (!manifest) {
-        return VK_ERROR_INITIALIZATION_FAILED;
-    }
+    assert(manifest != nullptr);
     const char* my_layer_name = (manifest->layer_name != nullptr) ? manifest->layer_name : "";
 
     if (layer_name == nullptr || my_layer_name[0] == '\0' || std::strcmp(layer_name, my_layer_name) != 0) {
@@ -298,8 +267,6 @@ VkResult LayerBase::EnumerateInstanceExtensionProperties(const char* layer_name,
     }
 
     std::vector<VkExtensionProperties> extensions = manifest->instance_extensions;
-    layer->ProcessInstanceExtensions(layer_name, extensions);
-
     return CopyEnumerationProperties(extensions, property_count, properties);
 }
 
@@ -309,9 +276,7 @@ VkResult LayerBase::EnumerateInstanceLayerProperties(uint32_t* property_count, V
 
     LayerBase* layer = Get();
     const LayerManifest* manifest = layer->GetLayerManifest();
-    if (!manifest) {
-        return VK_ERROR_INITIALIZATION_FAILED;
-    }
+    assert(manifest != nullptr);
 
     if (properties == nullptr) {
         *property_count = 1;
@@ -335,31 +300,27 @@ VkResult LayerBase::EnumerateDeviceLayerProperties(VkPhysicalDevice physical_dev
 
 VkResult LayerBase::EnumerateDeviceExtensionProperties(VkPhysicalDevice physical_device, const char* layer_name,
                                                        uint32_t* property_count, VkExtensionProperties* properties) {
-    PFN_vkEnumerateDeviceExtensionProperties downstream = nullptr;
-    if (physical_device != VK_NULL_HANDLE) {
-        auto* table = GetInstanceDispatchTable(physical_device);
-        if (table != nullptr) {
-            downstream = table->EnumerateDeviceExtensionProperties;
-        }
-    }
-    return EnumerateDeviceExtensionPropertiesWithDownstream(physical_device, layer_name, property_count, properties, downstream);
-}
-
-VkResult LayerBase::EnumerateDeviceExtensionPropertiesWithDownstream(
-    VkPhysicalDevice physical_device, const char* layer_name, uint32_t* property_count,
-    VkExtensionProperties* properties, PFN_vkEnumerateDeviceExtensionProperties downstream_function) {
     assert(property_count != nullptr);
     AssertLayerInitialized();
 
     LayerBase* layer = Get();
     const LayerManifest* manifest = layer->GetLayerManifest();
-    const char* my_layer_name = (manifest && manifest->layer_name) ? manifest->layer_name : "";
+    assert(manifest != nullptr);
+    const char* my_layer_name = (manifest->layer_name != nullptr) ? manifest->layer_name : "";
 
     // When explicitly querying this layer's device extensions:
     if (layer_name != nullptr && my_layer_name[0] != '\0' && std::strcmp(layer_name, my_layer_name) == 0) {
         std::vector<VkExtensionProperties> extensions = manifest->device_extensions;
         layer->ProcessDeviceExtensions(physical_device, layer_name, extensions);
         return CopyEnumerationProperties(extensions, property_count, properties);
+    }
+
+    PFN_vkEnumerateDeviceExtensionProperties downstream_function = nullptr;
+    if (physical_device != VK_NULL_HANDLE) {
+        auto* table = GetInstanceDispatchTable(physical_device);
+        if (table != nullptr) {
+            downstream_function = table->EnumerateDeviceExtensionProperties;
+        }
     }
 
     // If another layer is being queried, forward downstream or return VK_ERROR_LAYER_NOT_PRESENT
@@ -390,18 +351,16 @@ VkResult LayerBase::EnumerateDeviceExtensionPropertiesWithDownstream(
         }
     }
 
-    if (manifest) {
-        for (const auto& layer_extension : manifest->device_extensions) {
-            bool duplicate = false;
-            for (const auto& existing : extensions) {
-                if (std::strcmp(existing.extensionName, layer_extension.extensionName) == 0) {
-                    duplicate = true;
-                    break;
-                }
+    for (const auto& layer_extension : manifest->device_extensions) {
+        bool duplicate = false;
+        for (const auto& existing : extensions) {
+            if (std::strcmp(existing.extensionName, layer_extension.extensionName) == 0) {
+                duplicate = true;
+                break;
             }
-            if (!duplicate) {
-                extensions.push_back(layer_extension);
-            }
+        }
+        if (!duplicate) {
+            extensions.push_back(layer_extension);
         }
     }
 
@@ -412,27 +371,23 @@ VkResult LayerBase::EnumerateDeviceExtensionPropertiesWithDownstream(
 
 VkResult LayerBase::GetPhysicalDeviceToolProperties(VkPhysicalDevice physical_device, uint32_t* tool_count,
                                                     VkPhysicalDeviceToolPropertiesEXT* tool_properties) {
-    PFN_vkGetPhysicalDeviceToolPropertiesEXT downstream = nullptr;
-    if (physical_device != VK_NULL_HANDLE) {
-        auto* table = GetInstanceDispatchTable(physical_device);
-        if (table != nullptr) {
-            downstream = table->GetPhysicalDeviceToolPropertiesEXT;
-            if (!downstream) {
-                downstream = table->GetPhysicalDeviceToolProperties;
-            }
-        }
-    }
-    return GetPhysicalDeviceToolPropertiesWithDownstream(physical_device, tool_count, tool_properties, downstream);
-}
-
-VkResult LayerBase::GetPhysicalDeviceToolPropertiesWithDownstream(
-    VkPhysicalDevice physical_device, uint32_t* tool_count, VkPhysicalDeviceToolPropertiesEXT* tool_properties,
-    PFN_vkGetPhysicalDeviceToolPropertiesEXT downstream_function) {
     assert(tool_count != nullptr);
     AssertLayerInitialized();
 
     LayerBase* layer = Get();
     const LayerManifest* manifest = layer->GetLayerManifest();
+    assert(manifest != nullptr);
+
+    PFN_vkGetPhysicalDeviceToolPropertiesEXT downstream_function = nullptr;
+    if (physical_device != VK_NULL_HANDLE) {
+        auto* table = GetInstanceDispatchTable(physical_device);
+        if (table != nullptr) {
+            downstream_function = table->GetPhysicalDeviceToolPropertiesEXT;
+            if (!downstream_function) {
+                downstream_function = table->GetPhysicalDeviceToolProperties;
+            }
+        }
+    }
 
     std::vector<VkPhysicalDeviceToolPropertiesEXT> tools;
     if (downstream_function) {
@@ -456,25 +411,14 @@ VkResult LayerBase::GetPhysicalDeviceToolPropertiesWithDownstream(
         }
     }
 
-    if (manifest && manifest->tool_properties.has_value()) {
+    if (manifest->tool_properties.has_value()) {
         tools.push_back(*manifest->tool_properties);
     }
-
-    layer->ProcessToolProperties(physical_device, tools);
 
     return CopyEnumerationProperties(tools, tool_count, tool_properties);
 }
 
-void LayerBase::ProcessInstanceExtensions(const char*, std::vector<VkExtensionProperties>&) const {}
-
 void LayerBase::ProcessDeviceExtensions(VkPhysicalDevice, const char*, std::vector<VkExtensionProperties>&) const {}
-
-void LayerBase::ProcessToolProperties(VkPhysicalDevice, std::vector<VkPhysicalDeviceToolPropertiesEXT>&) const {}
-
-bool LayerBase::HasToolProperties() const {
-    const LayerManifest* manifest = GetLayerManifest();
-    return manifest && manifest->tool_properties.has_value();
-}
 
 void LayerBase::PreCreateInstance(VkInstanceCreateInfo*, const VkAllocationCallbacks*) {}
 void LayerBase::PostCreateInstance(VkInstance, const VkInstanceCreateInfo*, const VkAllocationCallbacks*) {}
@@ -483,6 +427,11 @@ void LayerBase::PreDestroyInstance(VkInstance, const VkAllocationCallbacks*) {}
 void LayerBase::PreCreateDevice(VkPhysicalDevice, VkDeviceCreateInfo*, const VkAllocationCallbacks*) {}
 void LayerBase::PostCreateDevice(VkDevice, VkPhysicalDevice, const VkDeviceCreateInfo*, const VkAllocationCallbacks*) {}
 void LayerBase::PreDestroyDevice(VkDevice, const VkAllocationCallbacks*) {}
+
+const LayerManifest* LayerBase::GetLayerManifest() const {
+    static const LayerManifest kDefaultManifest{};
+    return &kDefaultManifest;
+}
 
 PFN_vkVoidFunction LayerBase::GetLayerInstanceCommand(const char*) { return nullptr; }
 
@@ -530,7 +479,8 @@ PFN_vkVoidFunction LayerBase::GetKnownInstanceCommand(const char* command_name) 
     }
     if (std::strcmp(command_name, "vkGetPhysicalDeviceToolPropertiesEXT") == 0 ||
         std::strcmp(command_name, "vkGetPhysicalDeviceToolProperties") == 0) {
-        if (layer->HasToolProperties()) {
+        const LayerManifest* manifest = layer->GetLayerManifest();
+        if (manifest != nullptr && manifest->tool_properties.has_value()) {
             return reinterpret_cast<PFN_vkVoidFunction>(GetPhysicalDeviceToolProperties);
         }
     }
