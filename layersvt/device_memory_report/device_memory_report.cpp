@@ -210,10 +210,14 @@ void DeviceMemoryReport::UpdateAllocationUnboundCounter(uint64_t memory_handle) 
     uint64_t new_unbound = (allocation.total_size > bound_size) ? (allocation.total_size - bound_size) : 0;
     
     std::string track_name = "unbound_memory";
-    auto res_it = resources_.find(allocation.object_handle);
-    // If the memory object has an associated resource with a specific usage, use it as the track name.
-    if (res_it != resources_.end()) {
-        track_name = res_it->second.GetCluster(allocation.mem_flags);
+    if (allocation.is_driver &&
+        (allocation.object_type == VK_OBJECT_TYPE_IMAGE ||
+         allocation.object_type == VK_OBJECT_TYPE_BUFFER)) {
+        auto res_it = resources_.find(allocation.object_handle);
+        // If the memory object has an associated resource with a specific usage, use it as the track name.
+        if (res_it != resources_.end()) {
+            track_name = res_it->second.GetCluster(allocation.mem_flags);
+        }
     }
     std::string new_unbound_track = GetUsageTrackName(allocation.is_driver, track_name);
 
@@ -312,13 +316,19 @@ VkDeviceSize DeviceMemoryReport::GetRecordedResourceSize(uint64_t resource_handl
     return it != resources_.end() ? it->second.size : 0;
 }
 
+uint64_t DeviceMemoryReport::GetUsageCounterBytes(const std::string& track) {
+    std::lock_guard<std::mutex> lock(counter_mutex_);
+    auto it = usage_memory_bytes_.find(track);
+    return it != usage_memory_bytes_.end() ? it->second : 0;
+}
+
 void DeviceMemoryReport::OnCreateImage(uint64_t image_handle, VkImageUsageFlags usage) {
     std::lock_guard<std::mutex> lock(counter_mutex_);
     auto& res = resources_[image_handle];
     res.is_image = true;
     res.image_usage = usage;
     for (const auto& pair : memory_allocations_) {
-        if (pair.second.object_handle == image_handle) {
+        if (pair.second.is_driver && pair.second.object_type == VK_OBJECT_TYPE_IMAGE && pair.second.object_handle == image_handle) {
             UpdateAllocationUnboundCounter(pair.first);
         }
     }
@@ -331,7 +341,7 @@ void DeviceMemoryReport::OnCreateBuffer(uint64_t buffer_handle, VkBufferUsageFla
     res.buffer_usage = usage;
     res.size = size;
     for (const auto& pair : memory_allocations_) {
-        if (pair.second.object_handle == buffer_handle) {
+        if (pair.second.is_driver && pair.second.object_type == VK_OBJECT_TYPE_BUFFER && pair.second.object_handle == buffer_handle) {
             UpdateAllocationUnboundCounter(pair.first);
         }
     }
@@ -355,6 +365,7 @@ void DeviceMemoryReport::OnMemoryReportEvent(const VkDeviceMemoryReportCallbackD
         auto& allocation = memory_allocations_[key];
         allocation.total_size = pCallbackData->size;
         allocation.is_driver = (pCallbackData->flags & VK_DEVICE_MEMORY_REPORT_FLAG_INTERNAL_OBJECT_BIT_EXT) != 0;
+        allocation.object_type = pCallbackData->objectType;
         allocation.object_handle = pCallbackData->objectHandle;
         UpdateAllocationUnboundCounter(key);
     } else if (pCallbackData->type == VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT ||
