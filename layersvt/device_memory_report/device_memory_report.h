@@ -193,12 +193,21 @@ class DeviceMemoryReport {
     void OnCreateBuffer(uint64_t buffer_handle, VkBufferUsageFlags usage, VkDeviceSize size);
 
     /**
+     * @brief Dumps the current state of counters and allocations to Perfetto.
+     * Invoked when a new Perfetto tracing session starts. Acquires counter_mutex_,
+     * so it must not be called while that lock is held.
+     */
+    void DumpCurrentCountersAndAllocations();
+
+    /**
      * @brief Handles destruction of a Vulkan object, cleaning up tracked usage state.
      * @param object_handle The 64-bit handle of the destroyed Vulkan object.
      */
     void OnDestroyObject(uint64_t object_handle);
 
    private:
+    friend class DeviceMemoryReportTestPeer;
+
     /**
      * @brief Represents a sub-allocation of a Vulkan resource (buffer or image) bound within a physical memory allocation.
      */
@@ -221,6 +230,7 @@ class DeviceMemoryReport {
         std::vector<SubAllocation> sub_allocations;
         std::string unbound_usage_track;
         uint64_t object_handle = 0;
+        const char* cluster_name = "unbound_memory";
     };
 
     /**

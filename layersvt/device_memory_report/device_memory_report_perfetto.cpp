@@ -14,6 +14,7 @@
  */
 
 #include "device_memory_report_perfetto.h"
+#include "device_memory_report.h"
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -22,13 +23,40 @@
 
 PERFETTO_TRACK_EVENT_STATIC_STORAGE();
 
+namespace {
+
+class DeviceMemoryReportSessionObserver : public perfetto::TrackEventSessionObserver {
+public:
+    DeviceMemoryReportSessionObserver() {
+        // Touch the singleton during observer construction so DeviceMemoryReport
+        // completes construction first and is destroyed after this observer unregisters.
+        (void)DeviceMemoryReport::Get();
+    }
+
+    ~DeviceMemoryReportSessionObserver() override {
+        perfetto::TrackEvent::RemoveSessionObserver(this);
+    }
+
+    void OnStart(const perfetto::DataSourceBase::StartArgs&) override {
+        DeviceMemoryReport::Get().DumpCurrentCountersAndAllocations();
+    }
+};
+
+}  // namespace
+
 void InitializeDeviceMemoryReportPerfetto() {
     static std::once_flag init_flag;
     std::call_once(init_flag, []() {
+        static DeviceMemoryReportSessionObserver session_observer;
         perfetto::TracingInitArgs args;
         args.backends = perfetto::kSystemBackend;
         perfetto::Tracing::Initialize(args);
         perfetto::TrackEvent::Register();
+        perfetto::TrackEvent::AddSessionObserver(&session_observer);
+
+        if (TRACE_EVENT_CATEGORY_ENABLED("VulkanDeviceMemoryReport")) {
+            DeviceMemoryReport::Get().DumpCurrentCountersAndAllocations();
+        }
     });
 }
 
