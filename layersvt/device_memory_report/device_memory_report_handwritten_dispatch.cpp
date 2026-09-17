@@ -19,18 +19,22 @@
 
 extern "C" {
 
-static PFN_vkVoidFunction devmemreport_known_instance_functions(const char* pName) {
+static PFN_vkVoidFunction devmemreport_known_global_functions(const char* pName) {
     if (strcmp(pName, "vkGetInstanceProcAddr") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkGetInstanceProcAddr);
     if (strcmp(pName, "vkCreateInstance") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkCreateInstance);
-    if (strcmp(pName, "vkDestroyInstance") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkDestroyInstance);
-    if (strcmp(pName, "vkEnumeratePhysicalDevices") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkEnumeratePhysicalDevices);
-    if (strcmp(pName, "vkEnumeratePhysicalDeviceGroups") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkEnumeratePhysicalDeviceGroups);
     if (strcmp(pName, "vkEnumerateInstanceExtensionProperties") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkEnumerateInstanceExtensionProperties);
     if (strcmp(pName, "vkEnumerateInstanceLayerProperties") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkEnumerateInstanceLayerProperties);
     return nullptr;
 }
 
-static PFN_vkVoidFunction devmemreport_known_device_functions(const char* pName) {
+static PFN_vkVoidFunction devmemreport_known_instance_functions(const char* pName) {
+    if (strcmp(pName, "vkDestroyInstance") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkDestroyInstance);
+    if (strcmp(pName, "vkEnumeratePhysicalDevices") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkEnumeratePhysicalDevices);
+    if (strcmp(pName, "vkEnumeratePhysicalDeviceGroups") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkEnumeratePhysicalDeviceGroups);
+    return nullptr;
+}
+
+static PFN_vkVoidFunction devmemreport_known_core_device_functions(const char* pName) {
     if (strcmp(pName, "vkGetDeviceProcAddr") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkGetDeviceProcAddr);
     if (strcmp(pName, "vkCreateDevice") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkCreateDevice);
     if (strcmp(pName, "vkDestroyDevice") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkDestroyDevice);
@@ -41,29 +45,35 @@ static PFN_vkVoidFunction devmemreport_known_device_functions(const char* pName)
     if (strcmp(pName, "vkBindImageMemory") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkBindImageMemory);
     if (strcmp(pName, "vkBindBufferMemory2") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkBindBufferMemory2);
     if (strcmp(pName, "vkBindImageMemory2") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkBindImageMemory2);
-    if (strcmp(pName, "vkBindBufferMemory2KHR") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkBindBufferMemory2KHR);
-    if (strcmp(pName, "vkBindImageMemory2KHR") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkBindImageMemory2KHR);
     if (strcmp(pName, "vkCreateImage") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkCreateImage);
     if (strcmp(pName, "vkDestroyImage") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkDestroyImage);
     if (strcmp(pName, "vkCreateBuffer") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkCreateBuffer);
     if (strcmp(pName, "vkDestroyBuffer") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkDestroyBuffer);
     if (strcmp(pName, "vkGetImageMemoryRequirements") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkGetImageMemoryRequirements);
     if (strcmp(pName, "vkGetImageMemoryRequirements2") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkGetImageMemoryRequirements2);
-    if (strcmp(pName, "vkGetImageMemoryRequirements2KHR") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkGetImageMemoryRequirements2KHR);
     if (strcmp(pName, "vkGetBufferMemoryRequirements") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkGetBufferMemoryRequirements);
     if (strcmp(pName, "vkGetBufferMemoryRequirements2") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkGetBufferMemoryRequirements2);
+    return nullptr;
+}
+
+static PFN_vkVoidFunction devmemreport_known_device_extension_functions(const char* pName) {
+    if (strcmp(pName, "vkBindBufferMemory2KHR") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkBindBufferMemory2KHR);
+    if (strcmp(pName, "vkBindImageMemory2KHR") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkBindImageMemory2KHR);
+    if (strcmp(pName, "vkGetImageMemoryRequirements2KHR") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkGetImageMemoryRequirements2KHR);
     if (strcmp(pName, "vkGetBufferMemoryRequirements2KHR") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkGetBufferMemoryRequirements2KHR);
     return nullptr;
 }
 
-EXPORT_FUNCTION VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char* pName) {
-    PFN_vkVoidFunction func = devmemreport_known_instance_functions(pName);
+static PFN_vkVoidFunction devmemreport_known_device_functions(const char* pName) {
+    PFN_vkVoidFunction func = devmemreport_known_core_device_functions(pName);
     if (func) {
         return func;
     }
-    
-    // If it's a device function, we can also return it here if we want to support GIPA for device functions.
-    func = devmemreport_known_device_functions(pName);
+    return devmemreport_known_device_extension_functions(pName);
+}
+
+EXPORT_FUNCTION VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char* pName) {
+    PFN_vkVoidFunction func = devmemreport_known_global_functions(pName);
     if (func) {
         return func;
     }
@@ -72,12 +82,34 @@ EXPORT_FUNCTION VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(V
         return nullptr;
     }
 
+    func = devmemreport_known_instance_functions(pName);
+    if (func) {
+        return func;
+    }
+    
+    // Core device functions can be returned directly from GIPA.
+    func = devmemreport_known_core_device_functions(pName);
+    if (func) {
+        return func;
+    }
+
     auto table = instance_dispatch_table(instance);
     if (table == NULL || table->GetInstanceProcAddr == NULL) {
         return nullptr;
     }
 
-    return table->GetInstanceProcAddr(instance, pName);
+    // For extension device commands, verify the underlying chain supports them before returning an interceptor.
+    PFN_vkVoidFunction down_func = table->GetInstanceProcAddr(instance, pName);
+    if (down_func == nullptr) {
+        return nullptr;
+    }
+
+    func = devmemreport_known_device_extension_functions(pName);
+    if (func) {
+        return func;
+    }
+
+    return down_func;
 }
 
 EXPORT_FUNCTION VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char* pName) {
