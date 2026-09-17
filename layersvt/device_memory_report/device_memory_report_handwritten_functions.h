@@ -258,8 +258,19 @@ EXPORT_FUNCTION VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(
 
 // Intercept memory binding to correlate buffer object handles with device memory allocations.
 VKAPI_ATTR VkResult VKAPI_CALL vkBindBufferMemory(VkDevice device, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize memoryOffset) {
-    VkResult result = device_dispatch_table(device)->BindBufferMemory(device, buffer, memory, memoryOffset);
-    if (result == VK_SUCCESS && buffer != VK_NULL_HANDLE && memory != VK_NULL_HANDLE) {
+    auto* table = device_dispatch_table(device);
+    assert(table->BindBufferMemory != nullptr);
+    assert(buffer != VK_NULL_HANDLE);
+    assert(memory != VK_NULL_HANDLE);
+    if (DeviceMemoryReport::Get().GetRecordedResourceSize(reinterpret_cast<uint64_t>(buffer)) == 0) {
+        if (table->GetBufferMemoryRequirements) {
+            VkMemoryRequirements mem_reqs;
+            table->GetBufferMemoryRequirements(device, buffer, &mem_reqs);
+            DeviceMemoryReport::Get().OnRecordResourceSize(reinterpret_cast<uint64_t>(buffer), mem_reqs.size);
+        }
+    }
+    VkResult result = table->BindBufferMemory(device, buffer, memory, memoryOffset);
+    if (result == VK_SUCCESS) {
         DeviceMemoryReport::Get().OnBindBufferMemory(reinterpret_cast<uint64_t>(buffer), reinterpret_cast<uint64_t>(memory), memoryOffset);
     }
     return result;
@@ -267,63 +278,102 @@ VKAPI_ATTR VkResult VKAPI_CALL vkBindBufferMemory(VkDevice device, VkBuffer buff
 
 // Intercept memory binding to correlate image object handles with device memory allocations.
 VKAPI_ATTR VkResult VKAPI_CALL vkBindImageMemory(VkDevice device, VkImage image, VkDeviceMemory memory, VkDeviceSize memoryOffset) {
-    VkResult result = device_dispatch_table(device)->BindImageMemory(device, image, memory, memoryOffset);
-    if (result == VK_SUCCESS && image != VK_NULL_HANDLE && memory != VK_NULL_HANDLE) {
+    auto* table = device_dispatch_table(device);
+    assert(table->BindImageMemory != nullptr);
+    assert(image != VK_NULL_HANDLE);
+    assert(memory != VK_NULL_HANDLE);
+    if (DeviceMemoryReport::Get().GetRecordedResourceSize(reinterpret_cast<uint64_t>(image)) == 0) {
+        if (table->GetImageMemoryRequirements) {
+            VkMemoryRequirements mem_reqs;
+            table->GetImageMemoryRequirements(device, image, &mem_reqs);
+            DeviceMemoryReport::Get().OnRecordResourceSize(reinterpret_cast<uint64_t>(image), mem_reqs.size);
+        }
+    }
+    VkResult result = table->BindImageMemory(device, image, memory, memoryOffset);
+    if (result == VK_SUCCESS) {
         DeviceMemoryReport::Get().OnBindImageMemory(reinterpret_cast<uint64_t>(image), reinterpret_cast<uint64_t>(memory), memoryOffset);
     }
     return result;
 }
 
-static void RecordBufferBindings(uint32_t bindInfoCount, const VkBindBufferMemoryInfo* pBindInfos) {
+static void RecordBufferBindings(VkDevice device, uint32_t bindInfoCount, const VkBindBufferMemoryInfo* pBindInfos) {
+    auto* table = device_dispatch_table(device);
     for (uint32_t i = 0; i < bindInfoCount; ++i) {
-        if (pBindInfos[i].buffer != VK_NULL_HANDLE && pBindInfos[i].memory != VK_NULL_HANDLE) {
-            DeviceMemoryReport::Get().OnBindBufferMemory(reinterpret_cast<uint64_t>(pBindInfos[i].buffer), reinterpret_cast<uint64_t>(pBindInfos[i].memory), pBindInfos[i].memoryOffset);
+        assert(pBindInfos[i].buffer != VK_NULL_HANDLE);
+        assert(pBindInfos[i].memory != VK_NULL_HANDLE);
+        if (DeviceMemoryReport::Get().GetRecordedResourceSize(reinterpret_cast<uint64_t>(pBindInfos[i].buffer)) == 0) {
+            VkMemoryRequirements mem_reqs;
+            table->GetBufferMemoryRequirements(device, pBindInfos[i].buffer, &mem_reqs);
+            DeviceMemoryReport::Get().OnRecordResourceSize(reinterpret_cast<uint64_t>(pBindInfos[i].buffer), mem_reqs.size);
         }
+        DeviceMemoryReport::Get().OnBindBufferMemory(reinterpret_cast<uint64_t>(pBindInfos[i].buffer), reinterpret_cast<uint64_t>(pBindInfos[i].memory), pBindInfos[i].memoryOffset);
     }
 }
 
 // Intercept memory binding via vkBindBufferMemory2 to correlate buffer object handles with device memory allocations.
 VKAPI_ATTR VkResult VKAPI_CALL vkBindBufferMemory2(VkDevice device, uint32_t bindInfoCount, const VkBindBufferMemoryInfo* pBindInfos) {
-    VkResult result = device_dispatch_table(device)->BindBufferMemory2(device, bindInfoCount, pBindInfos);
+    auto* table = device_dispatch_table(device);
+    assert(table->BindBufferMemory2 != nullptr);
+    VkResult result = table->BindBufferMemory2(device, bindInfoCount, pBindInfos);
     if (result == VK_SUCCESS && pBindInfos != nullptr) {
-        RecordBufferBindings(bindInfoCount, pBindInfos);
+        RecordBufferBindings(device, bindInfoCount, pBindInfos);
     }
     return result;
 }
 
 // Intercept memory binding via vkBindBufferMemory2KHR to correlate buffer object handles with device memory allocations.
 VKAPI_ATTR VkResult VKAPI_CALL vkBindBufferMemory2KHR(VkDevice device, uint32_t bindInfoCount, const VkBindBufferMemoryInfo* pBindInfos) {
-    assert(device_dispatch_table(device)->BindBufferMemory2KHR != nullptr);
-    VkResult result = device_dispatch_table(device)->BindBufferMemory2KHR(device, bindInfoCount, pBindInfos);
+    auto* table = device_dispatch_table(device);
+    assert(table->BindBufferMemory2KHR != nullptr);
+    VkResult result = table->BindBufferMemory2KHR(device, bindInfoCount, pBindInfos);
     if (result == VK_SUCCESS && pBindInfos != nullptr) {
-        RecordBufferBindings(bindInfoCount, pBindInfos);
+        RecordBufferBindings(device, bindInfoCount, pBindInfos);
     }
     return result;
 }
 
-static void RecordImageBinds(uint32_t bindInfoCount, const VkBindImageMemoryInfo* pBindInfos) {
+static void RecordImageBinds(VkDevice device, uint32_t bindInfoCount, const VkBindImageMemoryInfo* pBindInfos) {
+    auto* table = device_dispatch_table(device);
     for (uint32_t i = 0; i < bindInfoCount; ++i) {
-        if (pBindInfos[i].image != VK_NULL_HANDLE && pBindInfos[i].memory != VK_NULL_HANDLE) {
-            DeviceMemoryReport::Get().OnBindImageMemory(reinterpret_cast<uint64_t>(pBindInfos[i].image), reinterpret_cast<uint64_t>(pBindInfos[i].memory), pBindInfos[i].memoryOffset);
+        assert(pBindInfos[i].image != VK_NULL_HANDLE);
+        assert(pBindInfos[i].memory != VK_NULL_HANDLE);
+        if (DeviceMemoryReport::Get().GetRecordedResourceSize(reinterpret_cast<uint64_t>(pBindInfos[i].image)) == 0) {
+            bool is_plane_bind = false;
+            for (const auto* header = reinterpret_cast<const VkBaseInStructure*>(pBindInfos[i].pNext);
+                 header != nullptr; header = header->pNext) {
+                if (header->sType == VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO) {
+                    is_plane_bind = true;
+                    break;
+                }
+            }
+            if (!is_plane_bind) {
+                VkMemoryRequirements mem_reqs;
+                table->GetImageMemoryRequirements(device, pBindInfos[i].image, &mem_reqs);
+                DeviceMemoryReport::Get().OnRecordResourceSize(reinterpret_cast<uint64_t>(pBindInfos[i].image), mem_reqs.size);
+            }
         }
+        DeviceMemoryReport::Get().OnBindImageMemory(reinterpret_cast<uint64_t>(pBindInfos[i].image), reinterpret_cast<uint64_t>(pBindInfos[i].memory), pBindInfos[i].memoryOffset);
     }
 }
 
 // Intercept memory binding via vkBindImageMemory2 to correlate image object handles with device memory allocations.
 VKAPI_ATTR VkResult VKAPI_CALL vkBindImageMemory2(VkDevice device, uint32_t bindInfoCount, const VkBindImageMemoryInfo* pBindInfos) {
-    VkResult result = device_dispatch_table(device)->BindImageMemory2(device, bindInfoCount, pBindInfos);
+    auto* table = device_dispatch_table(device);
+    assert(table->BindImageMemory2 != nullptr);
+    VkResult result = table->BindImageMemory2(device, bindInfoCount, pBindInfos);
     if (result == VK_SUCCESS && pBindInfos != nullptr) {
-        RecordImageBinds(bindInfoCount, pBindInfos);
+        RecordImageBinds(device, bindInfoCount, pBindInfos);
     }
     return result;
 }
 
 // Intercept memory binding via vkBindImageMemory2KHR to correlate image object handles with device memory allocations.
 VKAPI_ATTR VkResult VKAPI_CALL vkBindImageMemory2KHR(VkDevice device, uint32_t bindInfoCount, const VkBindImageMemoryInfo* pBindInfos) {
-    assert(device_dispatch_table(device)->BindImageMemory2KHR != nullptr);
-    VkResult result = device_dispatch_table(device)->BindImageMemory2KHR(device, bindInfoCount, pBindInfos);
+    auto* table = device_dispatch_table(device);
+    assert(table->BindImageMemory2KHR != nullptr);
+    VkResult result = table->BindImageMemory2KHR(device, bindInfoCount, pBindInfos);
     if (result == VK_SUCCESS && pBindInfos != nullptr) {
-        RecordImageBinds(bindInfoCount, pBindInfos);
+        RecordImageBinds(device, bindInfoCount, pBindInfos);
     }
     return result;
 }

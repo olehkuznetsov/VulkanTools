@@ -393,6 +393,16 @@ uint64_t DeviceMemoryReport::GetUsageCounterBytes(const std::string& track) {
     return it != usage_memory_bytes_.end() ? it->second : 0;
 }
 
+void DeviceMemoryReport::Reset() {
+    std::scoped_lock lock(map_mutex_, counter_mutex_);
+    vk_instance_map_.clear();
+    has_callback_map_.clear();
+    device_memory_properties_map_.clear();
+    resources_.clear();
+    resource_to_memory_map_.clear();
+    memory_allocations_.clear();
+    usage_memory_bytes_.clear();
+}
 void DeviceMemoryReport::OnCreateImage(uint64_t image_handle, VkImageUsageFlags usage) {
     std::lock_guard<std::mutex> lock(counter_mutex_);
     auto& res = resources_[image_handle];

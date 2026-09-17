@@ -61,3 +61,28 @@ foreach(test_item ${LAYER_TEST_FILES})
 
     LayerTest(${test_item})
 endforeach()
+
+# Unit tests for the DeviceMemoryReport layer's Vulkan entry points. The layer sources are linked
+# straight into the test binary and driven against a stub dispatch table, so no Vulkan ICD is
+# needed. The Vulkan loader is deliberately not linked here: the layer defines the vk* entry points
+# itself, and linking the loader as well would make it ambiguous which of the two is being called.
+if (TARGET VkLayer_DeviceMemoryReport)
+    add_executable(test_DeviceMemoryReport_dispatch
+                   test_devicememoryreport_dispatch.cpp
+                   ../device_memory_report/device_memory_report_handwritten_dispatch.cpp
+                   ../device_memory_report/device_memory_report.cpp
+                   ../device_memory_report/device_memory_report_perfetto.cpp
+                   ../perfetto/perfetto.cc
+                   ../vk_layer_table.cpp)
+    target_include_directories(test_DeviceMemoryReport_dispatch PRIVATE .. ../device_memory_report)
+    target_link_libraries(test_DeviceMemoryReport_dispatch
+                          Vulkan::Headers Vulkan::UtilityHeaders GTest::gtest GTest::gtest_main ${CMAKE_DL_LIBS})
+    target_compile_definitions(test_DeviceMemoryReport_dispatch PRIVATE VK_ENABLE_BETA_EXTENSIONS)
+    add_test(NAME test_DeviceMemoryReport_dispatch COMMAND test_DeviceMemoryReport_dispatch)
+    set_target_properties(test_DeviceMemoryReport_dispatch PROPERTIES FOLDER "layers/DeviceMemoryReport/Test")
+
+    if(WIN32 AND (QT_TARGET_TYPE STREQUAL STATIC_LIBRARY))
+      set_property(TARGET test_DeviceMemoryReport_dispatch PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+endif()
+

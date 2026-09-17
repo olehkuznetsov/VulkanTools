@@ -171,6 +171,11 @@ class DeviceMemoryReport {
     VkDeviceSize GetRecordedResourceSize(uint64_t resource_handle);
 
     /**
+     * @brief Resets all tracked internal state (for testing).
+     */
+    void Reset();
+
+    /**
      * @brief Retrieves the current total memory bytes recorded on a usage track (for testing).
      * @param track The full usage track name (e.g. "vulkan.mem.app.usage.unbound_memory").
      * @return Number of bytes currently recorded on the track, or 0 if the track has no counter.
