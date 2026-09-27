@@ -345,9 +345,71 @@ VkResult LayerBase::EnumerateDeviceExtensionPropertiesWithDownstream(
     return CopyEnumerationProperties(extensions, property_count, properties);
 }
 
+VkResult LayerBase::GetPhysicalDeviceToolProperties(VkPhysicalDevice physical_device, uint32_t* tool_count,
+                                                    VkPhysicalDeviceToolPropertiesEXT* tool_properties) {
+    PFN_vkGetPhysicalDeviceToolPropertiesEXT downstream = nullptr;
+    if (physical_device != VK_NULL_HANDLE) {
+        auto* table = GetInstanceDispatchTable(physical_device);
+        if (table != nullptr) {
+            downstream = table->GetPhysicalDeviceToolPropertiesEXT;
+            if (!downstream) {
+                downstream = table->GetPhysicalDeviceToolProperties;
+            }
+        }
+    }
+    return GetPhysicalDeviceToolPropertiesWithDownstream(physical_device, tool_count, tool_properties, downstream);
+}
+
+VkResult LayerBase::GetPhysicalDeviceToolPropertiesWithDownstream(
+    VkPhysicalDevice physical_device, uint32_t* tool_count, VkPhysicalDeviceToolPropertiesEXT* tool_properties,
+    PFN_vkGetPhysicalDeviceToolPropertiesEXT downstream_function) {
+    assert(tool_count != nullptr);
+    AssertLayerInitialized();
+
+    LayerBase* layer = Get();
+    const LayerManifest* manifest = layer->GetLayerManifest();
+
+    std::vector<VkPhysicalDeviceToolPropertiesEXT> tools;
+    if (downstream_function) {
+        uint32_t downstream_count = 0;
+        VkResult result = downstream_function(physical_device, &downstream_count, nullptr);
+        if (result != VK_SUCCESS && result != VK_INCOMPLETE) {
+            return result;
+        }
+        if (downstream_count > 0) {
+            uint32_t allocated_count = downstream_count;
+            tools.resize(allocated_count);
+            for (auto& tool : tools) {
+                tool.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TOOL_PROPERTIES_EXT;
+                tool.pNext = nullptr;
+            }
+            result = downstream_function(physical_device, &downstream_count, tools.data());
+            if (result != VK_SUCCESS && result != VK_INCOMPLETE) {
+                return result;
+            }
+            tools.resize(std::min(downstream_count, allocated_count));
+        }
+    }
+
+    if (manifest && manifest->tool_properties.has_value()) {
+        tools.push_back(*manifest->tool_properties);
+    }
+
+    layer->ProcessToolProperties(physical_device, tools);
+
+    return CopyEnumerationProperties(tools, tool_count, tool_properties);
+}
+
 void LayerBase::ProcessInstanceExtensions(const char*, std::vector<VkExtensionProperties>&) const {}
 
 void LayerBase::ProcessDeviceExtensions(VkPhysicalDevice, const char*, std::vector<VkExtensionProperties>&) const {}
+
+void LayerBase::ProcessToolProperties(VkPhysicalDevice, std::vector<VkPhysicalDeviceToolPropertiesEXT>&) const {}
+
+bool LayerBase::HasToolProperties() const {
+    const LayerManifest* manifest = GetLayerManifest();
+    return manifest && manifest->tool_properties.has_value();
+}
 
 void LayerBase::PreCreateInstance(VkInstanceCreateInfo*, const VkAllocationCallbacks*) {}
 void LayerBase::PostCreateInstance(VkInstance, const VkInstanceCreateInfo*, const VkAllocationCallbacks*) {}
@@ -393,6 +455,12 @@ PFN_vkVoidFunction LayerBase::GetKnownInstanceCommand(VkInstance instance, const
     }
     if (std::strcmp(command_name, "vkEnumerateDeviceExtensionProperties") == 0) {
         return reinterpret_cast<PFN_vkVoidFunction>(EnumerateDeviceExtensionProperties);
+    }
+    if (std::strcmp(command_name, "vkGetPhysicalDeviceToolPropertiesEXT") == 0 ||
+        std::strcmp(command_name, "vkGetPhysicalDeviceToolProperties") == 0) {
+        if (layer->HasToolProperties()) {
+            return reinterpret_cast<PFN_vkVoidFunction>(GetPhysicalDeviceToolProperties);
+        }
     }
     return nullptr;
 }

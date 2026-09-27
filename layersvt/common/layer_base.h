@@ -76,6 +76,19 @@ class LayerBase {
     virtual void ProcessDeviceExtensions(VkPhysicalDevice physical_device, const char* layer_name,
                                          std::vector<VkExtensionProperties>& extensions) const;
 
+    /**
+     * Customizes or filters tool properties during vkGetPhysicalDeviceToolProperties.
+     */
+    virtual void ProcessToolProperties(VkPhysicalDevice physical_device,
+                                       std::vector<VkPhysicalDeviceToolPropertiesEXT>& tools) const;
+
+    /**
+     * Indicates whether this layer intercepts physical device tool properties.
+     * Default implementation returns true if the layer manifest defines tool_properties.
+     * Returns true if tool properties queries should be intercepted, or false to dispatch downstream.
+     */
+    [[nodiscard]] virtual bool HasToolProperties() const;
+
     // Layer-specific command intercepts
 
     /**
@@ -195,6 +208,12 @@ class LayerBase {
     static VkResult EnumerateDeviceExtensionPropertiesWithDownstream(
         VkPhysicalDevice physical_device, const char* layer_name, uint32_t* property_count,
         VkExtensionProperties* properties, PFN_vkEnumerateDeviceExtensionProperties downstream_function);
+    static VkResult VKAPI_CALL GetPhysicalDeviceToolProperties(VkPhysicalDevice physical_device, uint32_t* tool_count,
+                                                               VkPhysicalDeviceToolPropertiesEXT* tool_properties);
+    static VkResult GetPhysicalDeviceToolPropertiesWithDownstream(
+        VkPhysicalDevice physical_device, uint32_t* tool_count, VkPhysicalDeviceToolPropertiesEXT* tool_properties,
+        PFN_vkGetPhysicalDeviceToolPropertiesEXT downstream_function);
+
     static PFN_vkVoidFunction GetKnownInstanceCommand(VkInstance instance, const char* command_name);
     static PFN_vkVoidFunction GetKnownDeviceCommand(VkDevice device, const char* command_name);
 };

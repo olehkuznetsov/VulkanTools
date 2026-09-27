@@ -175,6 +175,46 @@ TEST(LayerBaseEnumerationTest, DeviceExtensionsDownstreamIncomplete) {
     EXPECT_EQ(count, 1u);
 }
 
+TEST(LayerBaseEnumerationTest, ToolPropertiesMerge) {
+    VkPhysicalDeviceToolPropertiesEXT layer_tool_properties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TOOL_PROPERTIES_EXT,
+                                                               nullptr,
+                                                               "CommonLayerTool",
+                                                               "1.0",
+                                                               VK_TOOL_PURPOSE_PROFILING_BIT_EXT,
+                                                               "Diagnostic tool description",
+                                                               "CommonLayer"};
+
+    LayerManifest manifest{
+        .layer_name = "VK_LAYER_TEST_Sample",
+        .tool_properties = layer_tool_properties,
+    };
+    ManifestTestLayer layer(&manifest);
+
+    // Mock downstream reporting 1 driver tool
+    auto mock_downstream_tool = [](VkPhysicalDevice, uint32_t* count, VkPhysicalDeviceToolPropertiesEXT* properties) -> VkResult {
+        if (!properties) {
+            *count = 1;
+            return VK_SUCCESS;
+        }
+        EXPECT_EQ(properties[0].sType, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TOOL_PROPERTIES_EXT);
+        EXPECT_EQ(properties[0].pNext, nullptr);
+        std::strncpy(properties[0].name, "DriverTool", VK_MAX_EXTENSION_NAME_SIZE);
+        *count = 1;
+        return VK_SUCCESS;
+    };
+
+    uint32_t count = 0;
+    VkResult result = LayerBaseTestPeer::GetPhysicalDeviceToolProperties(nullptr, &count, nullptr, mock_downstream_tool);
+    EXPECT_EQ(result, VK_SUCCESS);
+    EXPECT_EQ(count, 2u);
+
+    std::vector<VkPhysicalDeviceToolPropertiesEXT> tools(count);
+    result = LayerBaseTestPeer::GetPhysicalDeviceToolProperties(nullptr, &count, tools.data(), mock_downstream_tool);
+    EXPECT_EQ(result, VK_SUCCESS);
+    EXPECT_STREQ(tools[0].name, "DriverTool");
+    EXPECT_STREQ(tools[1].name, "CommonLayerTool");
+}
+
 TEST(LayerBaseEnumerationTest, DeviceLayerPropertiesOverload) {
     LayerManifest manifest{
         .layer_name = "VK_LAYER_TEST_Sample",
@@ -293,6 +333,21 @@ TEST(LayerBaseEnumerationTest, DeviceExtensionsForwardDifferentLayerName) {
     EXPECT_STREQ(extensions[0].extensionName, "VK_EXT_downstream_ext");
 }
 
+TEST(LayerBaseEnumerationTest, ToolPropertiesErrorPropagation) {
+    LayerManifest manifest{
+        .layer_name = "VK_LAYER_TEST_Sample",
+    };
+    ManifestTestLayer layer(&manifest);
+
+    auto error_downstream_tool = [](VkPhysicalDevice, uint32_t*, VkPhysicalDeviceToolPropertiesEXT*) -> VkResult {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    };
+
+    uint32_t count = 0;
+    EXPECT_EQ(LayerBaseTestPeer::GetPhysicalDeviceToolProperties(nullptr, &count, nullptr, error_downstream_tool),
+              VK_ERROR_OUT_OF_HOST_MEMORY);
+}
+
 TEST(LayerBaseHooksTest, ProcessDeviceExtensionsFiltering) {
     class FilteringTestLayer : public LayerBase {
        public:
@@ -378,6 +433,49 @@ TEST(LayerBaseHooksTest, ProcessInstanceExtensionsAugmenting) {
     EXPECT_STREQ(extensions[1].extensionName, "VK_EXT_dynamic_instance_ext");
 }
 
+TEST(LayerBaseHooksTest, ProcessToolPropertiesCustomizing) {
+    class ToolCustomizingLayer : public LayerBase {
+       public:
+        explicit ToolCustomizingLayer(const LayerManifest* manifest) : manifest_(manifest) {}
+        const LayerManifest* GetLayerManifest() const override { return manifest_; }
+
+       protected:
+        void ProcessToolProperties(VkPhysicalDevice,
+                                   std::vector<VkPhysicalDeviceToolPropertiesEXT>& tools) const override {
+            for (auto& tool : tools) {
+                std::strncpy(tool.description, "Customized Description", VK_MAX_DESCRIPTION_SIZE);
+            }
+        }
+
+       private:
+        const LayerManifest* manifest_;
+    };
+
+    LayerManifest manifest{
+        .layer_name = "VK_LAYER_TEST_Tool",
+        .tool_properties = VkPhysicalDeviceToolPropertiesEXT{
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TOOL_PROPERTIES_EXT,
+            .pNext = nullptr,
+            .name = "TestTool",
+            .version = "1.0",
+            .purposes = VK_TOOL_PURPOSE_PROFILING_BIT_EXT,
+            .description = "Original Description",
+            .layer = "VK_LAYER_TEST_Tool",
+        },
+    };
+    ToolCustomizingLayer layer(&manifest);
+
+    uint32_t count = 0;
+    VkResult result = LayerBaseTestPeer::GetPhysicalDeviceToolProperties(nullptr, &count, nullptr, nullptr);
+    EXPECT_EQ(result, VK_SUCCESS);
+    EXPECT_EQ(count, 1u);
+
+    std::vector<VkPhysicalDeviceToolPropertiesEXT> tools(count);
+    result = LayerBaseTestPeer::GetPhysicalDeviceToolProperties(nullptr, &count, tools.data(), nullptr);
+    EXPECT_EQ(result, VK_SUCCESS);
+    EXPECT_STREQ(tools[0].description, "Customized Description");
+}
+
 TEST(LayerBaseTest, GetKnownCommandsCommonWithManifest) {
     LayerManifest manifest{
         .layer_name = "VK_LAYER_TEST_Common",
@@ -394,6 +492,54 @@ TEST(LayerBaseTest, GetKnownCommandsCommonWithManifest) {
     // Without tool_properties in manifest, tooling functions return nullptr
     EXPECT_EQ(LayerBaseTestPeer::GetKnownInstanceCommand("vkGetPhysicalDeviceToolPropertiesEXT"), nullptr);
     EXPECT_EQ(LayerBaseTestPeer::GetKnownInstanceCommand("vkGetPhysicalDeviceToolProperties"), nullptr);
+}
+
+TEST(LayerBaseTest, GetKnownCommandsWithToolProperties) {
+    LayerManifest manifest{
+        .layer_name = "VK_LAYER_TEST_Common",
+        .tool_properties = VkPhysicalDeviceToolPropertiesEXT{
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TOOL_PROPERTIES_EXT,
+            .pNext = nullptr,
+            .name = "VK_LAYER_TEST_Common",
+            .version = "1",
+            .purposes = VK_TOOL_PURPOSE_TRACING_BIT_EXT,
+            .description = "Test layer",
+            .layer = "VK_LAYER_TEST_Common",
+        },
+    };
+    ManifestTestLayer layer(&manifest);
+
+    EXPECT_NE(LayerBaseTestPeer::GetKnownInstanceCommand("vkGetPhysicalDeviceToolPropertiesEXT"), nullptr);
+    EXPECT_NE(LayerBaseTestPeer::GetKnownInstanceCommand("vkGetPhysicalDeviceToolProperties"), nullptr);
+    EXPECT_EQ(LayerBaseTestPeer::GetKnownDeviceCommand("vkGetPhysicalDeviceToolPropertiesEXT"), nullptr);
+    EXPECT_EQ(LayerBaseTestPeer::GetKnownDeviceCommand("vkGetPhysicalDeviceToolProperties"), nullptr);
+}
+
+TEST(LayerBaseTest, GetPhysicalDeviceToolPropertiesDispatch) {
+    LayerManifest manifest{
+        .layer_name = "VK_LAYER_TEST_Common",
+        .tool_properties = VkPhysicalDeviceToolPropertiesEXT{
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TOOL_PROPERTIES_EXT,
+            .pNext = nullptr,
+            .name = "VK_LAYER_TEST_Common",
+            .version = "1",
+            .purposes = VK_TOOL_PURPOSE_TRACING_BIT_EXT,
+            .description = "Test layer",
+            .layer = "VK_LAYER_TEST_Common",
+        },
+    };
+    ManifestTestLayer layer(&manifest);
+
+    // Test with null physical device (no downstream lookup)
+    uint32_t count = 0;
+    VkResult result = LayerBaseTestPeer::GetPhysicalDeviceToolProperties(VK_NULL_HANDLE, &count, nullptr);
+    EXPECT_EQ(result, VK_SUCCESS);
+    ASSERT_EQ(count, 1u);
+
+    std::vector<VkPhysicalDeviceToolPropertiesEXT> tools(count);
+    result = LayerBaseTestPeer::GetPhysicalDeviceToolProperties(VK_NULL_HANDLE, &count, tools.data());
+    EXPECT_EQ(result, VK_SUCCESS);
+    EXPECT_STREQ(tools[0].name, "VK_LAYER_TEST_Common");
 }
 
 TEST(LayerBaseEnumerationTest, EmptyExtensionsWithBuffer) {
@@ -413,3 +559,4 @@ TEST(LayerBaseEnumerationTest, EmptyExtensionsWithBuffer) {
     EXPECT_EQ(result, VK_SUCCESS);
     EXPECT_EQ(count, 0u);
 }
+

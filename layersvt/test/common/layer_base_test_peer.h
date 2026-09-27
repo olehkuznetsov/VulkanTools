@@ -61,6 +61,17 @@ class LayerBaseTestPeer {
         return LayerBase::EnumerateDeviceExtensionProperties(
             physical_device, layer_name, property_count, properties);
     }
+    static VkResult GetPhysicalDeviceToolProperties(
+        VkPhysicalDevice physical_device, uint32_t* tool_count,
+        VkPhysicalDeviceToolPropertiesEXT* tool_properties,
+        PFN_vkGetPhysicalDeviceToolPropertiesEXT downstream_function = nullptr) {
+        if (downstream_function != nullptr) {
+            return LayerBase::GetPhysicalDeviceToolPropertiesWithDownstream(
+                physical_device, tool_count, tool_properties, downstream_function);
+        }
+        return LayerBase::GetPhysicalDeviceToolProperties(
+            physical_device, tool_count, tool_properties);
+    }
     static const LayerManifest* GetLayerManifest(const LayerBase& layer) { return layer.GetLayerManifest(); }
     static DispatchTableManager& GetDispatchTableManager(LayerBase& layer) { return layer.GetDispatchTableManager(); }
     static const DispatchTableManager& GetDispatchTableManager(const LayerBase& layer) { return layer.GetDispatchTableManager(); }
