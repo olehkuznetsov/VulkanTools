@@ -18,6 +18,7 @@
 #include <vulkan/vulkan_core.h>
 #include <gtest/gtest.h>
 #include <stdlib.h>
+#include <cstring>
 
 #include "test/common/layer_base_test_peer.h"
 
@@ -254,4 +255,180 @@ TEST_F(DebugMarkerTests, MissingDownstreamExtensionTest) {
     name_info.pObjectName = "Buffer";
     EXPECT_EQ(set_object_name(mock_device, &name_info), VK_SUCCESS);
     EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(VK_OBJECT_TYPE_BUFFER, 0x4444, "Buffer"));
+}
+
+namespace {
+
+struct MessengerCallbackLog {
+    uint32_t call_count = 0;
+    VkDebugUtilsMessageSeverityFlagBitsEXT last_severity = static_cast<VkDebugUtilsMessageSeverityFlagBitsEXT>(0);
+};
+
+VKAPI_ATTR VkBool32 VKAPI_CALL LogMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                                                    VkDebugUtilsMessageTypeFlagsEXT, const VkDebugUtilsMessengerCallbackDataEXT*,
+                                                    void* pUserData) {
+    auto* log = static_cast<MessengerCallbackLog*>(pUserData);
+    ++log->call_count;
+    log->last_severity = messageSeverity;
+    return VK_FALSE;
+}
+
+VkDebugUtilsMessengerCreateInfoEXT MakeMessengerCreateInfo(VkDebugUtilsMessageSeverityFlagsEXT severity,
+                                                           VkDebugUtilsMessageTypeFlagsEXT type, MessengerCallbackLog* log) {
+    VkDebugUtilsMessengerCreateInfoEXT create_info{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
+    create_info.messageSeverity = severity;
+    create_info.messageType = type;
+    create_info.pfnUserCallback = LogMessengerCallback;
+    create_info.pUserData = log;
+    return create_info;
+}
+
+struct DebugUtilsMessengerCommands {
+    PFN_vkCreateDebugUtilsMessengerEXT create;
+    PFN_vkDestroyDebugUtilsMessengerEXT destroy;
+    PFN_vkSubmitDebugUtilsMessageEXT submit;
+};
+
+DebugUtilsMessengerCommands GetDebugUtilsMessengerCommands() {
+    return {reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+                layersvt::LayerBaseTestPeer::GetKnownInstanceCommand("vkCreateDebugUtilsMessengerEXT")),
+            reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+                layersvt::LayerBaseTestPeer::GetKnownInstanceCommand("vkDestroyDebugUtilsMessengerEXT")),
+            reinterpret_cast<PFN_vkSubmitDebugUtilsMessageEXT>(
+                layersvt::LayerBaseTestPeer::GetKnownInstanceCommand("vkSubmitDebugUtilsMessageEXT"))};
+}
+
+}  // namespace
+
+TEST_F(DebugMarkerTests, EmulatedDebugUtilsMessengerTest) {
+    TEST_DESCRIPTION("Verify debug utils messengers are emulated when the downstream lacks VK_EXT_debug_utils");
+
+    void* mock_instance_object = reinterpret_cast<void*>(0x5000);
+    VkInstance mock_instance = reinterpret_cast<VkInstance>(&mock_instance_object);
+
+    // The downstream instance only exposes vkDestroyInstance.
+    layersvt::LayerBaseTestPeer::GetDispatchTableManager(DebugMarker::Get())
+        .InitInstanceTable(mock_instance, [](VkInstance, const char* name) -> PFN_vkVoidFunction {
+            if (strcmp(name, "vkDestroyInstance") == 0) {
+                return reinterpret_cast<PFN_vkVoidFunction>(+[](VkInstance, const VkAllocationCallbacks*) {});
+            }
+            return nullptr;
+        });
+
+    DebugUtilsMessengerCommands commands = GetDebugUtilsMessengerCommands();
+    ASSERT_NE(commands.create, nullptr);
+    ASSERT_NE(commands.destroy, nullptr);
+    ASSERT_NE(commands.submit, nullptr);
+
+    MessengerCallbackLog error_log;
+    MessengerCallbackLog verbose_log;
+    VkDebugUtilsMessengerCreateInfoEXT error_info = MakeMessengerCreateInfo(
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT, &error_log);
+    VkDebugUtilsMessengerCreateInfoEXT verbose_info = MakeMessengerCreateInfo(
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT, &verbose_log);
+
+    VkDebugUtilsMessengerEXT error_messenger = VK_NULL_HANDLE;
+    VkDebugUtilsMessengerEXT verbose_messenger = VK_NULL_HANDLE;
+    EXPECT_EQ(commands.create(mock_instance, &error_info, nullptr, &error_messenger), VK_SUCCESS);
+    EXPECT_EQ(commands.create(mock_instance, &verbose_info, nullptr, &verbose_messenger), VK_SUCCESS);
+    EXPECT_NE(error_messenger, VK_NULL_HANDLE);
+    EXPECT_NE(verbose_messenger, VK_NULL_HANDLE);
+    EXPECT_NE(error_messenger, verbose_messenger);
+
+    // Only the messenger whose severity and type masks match is invoked.
+    VkDebugUtilsMessengerCallbackDataEXT callback_data{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT};
+    callback_data.pMessage = "message";
+    commands.submit(mock_instance, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT,
+                    &callback_data);
+    EXPECT_EQ(error_log.call_count, 1u);
+    EXPECT_EQ(error_log.last_severity, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT);
+    EXPECT_EQ(verbose_log.call_count, 0u);
+
+    // Matching severity with a non-matching type does not invoke the messenger.
+    commands.submit(mock_instance, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT,
+                    &callback_data);
+    EXPECT_EQ(error_log.call_count, 1u);
+    EXPECT_EQ(verbose_log.call_count, 0u);
+
+    // A destroyed messenger is no longer invoked; destroying VK_NULL_HANDLE is a no-op.
+    commands.destroy(mock_instance, error_messenger, nullptr);
+    commands.destroy(mock_instance, VK_NULL_HANDLE, nullptr);
+    commands.submit(mock_instance, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT,
+                    &callback_data);
+    EXPECT_EQ(error_log.call_count, 1u);
+
+    commands.submit(mock_instance, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT,
+                    &callback_data);
+    EXPECT_EQ(verbose_log.call_count, 1u);
+
+    // Destroying the instance removes its remaining emulated messengers.
+    layersvt::LayerBaseTestPeer::DestroyInstance(mock_instance, nullptr);
+    commands.submit(mock_instance, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT,
+                    &callback_data);
+    EXPECT_EQ(verbose_log.call_count, 1u);
+}
+
+namespace {
+
+uint32_t downstream_create_messenger_calls = 0;
+uint32_t downstream_destroy_messenger_calls = 0;
+uint32_t downstream_submit_message_calls = 0;
+const VkDebugUtilsMessengerEXT kDownstreamMessenger = (VkDebugUtilsMessengerEXT)0xABCDu;
+
+}  // namespace
+
+TEST_F(DebugMarkerTests, ForwardedDebugUtilsMessengerTest) {
+    TEST_DESCRIPTION("Verify debug utils messenger commands are forwarded when the downstream supports VK_EXT_debug_utils");
+
+    downstream_create_messenger_calls = 0;
+    downstream_destroy_messenger_calls = 0;
+    downstream_submit_message_calls = 0;
+
+    void* mock_instance_object = reinterpret_cast<void*>(0x6000);
+    VkInstance mock_instance = reinterpret_cast<VkInstance>(&mock_instance_object);
+
+    layersvt::LayerBaseTestPeer::GetDispatchTableManager(DebugMarker::Get())
+        .InitInstanceTable(mock_instance, [](VkInstance, const char* name) -> PFN_vkVoidFunction {
+            if (strcmp(name, "vkCreateDebugUtilsMessengerEXT") == 0) {
+                return reinterpret_cast<PFN_vkVoidFunction>(+[](VkInstance, const VkDebugUtilsMessengerCreateInfoEXT*,
+                                                                const VkAllocationCallbacks*,
+                                                                VkDebugUtilsMessengerEXT* pMessenger) {
+                    ++downstream_create_messenger_calls;
+                    *pMessenger = kDownstreamMessenger;
+                    return VK_SUCCESS;
+                });
+            }
+            if (strcmp(name, "vkDestroyDebugUtilsMessengerEXT") == 0) {
+                return reinterpret_cast<PFN_vkVoidFunction>(
+                    +[](VkInstance, VkDebugUtilsMessengerEXT, const VkAllocationCallbacks*) {
+                        ++downstream_destroy_messenger_calls;
+                    });
+            }
+            if (strcmp(name, "vkSubmitDebugUtilsMessageEXT") == 0) {
+                return reinterpret_cast<PFN_vkVoidFunction>(
+                    +[](VkInstance, VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT,
+                        const VkDebugUtilsMessengerCallbackDataEXT*) { ++downstream_submit_message_calls; });
+            }
+            return nullptr;
+        });
+
+    DebugUtilsMessengerCommands commands = GetDebugUtilsMessengerCommands();
+    MessengerCallbackLog log;
+    VkDebugUtilsMessengerCreateInfoEXT create_info = MakeMessengerCreateInfo(VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+                                                                             VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT, &log);
+
+    VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
+    EXPECT_EQ(commands.create(mock_instance, &create_info, nullptr, &messenger), VK_SUCCESS);
+    EXPECT_EQ(messenger, kDownstreamMessenger);
+    EXPECT_EQ(downstream_create_messenger_calls, 1u);
+
+    // Messages go to the downstream; the layer does not invoke the callback itself.
+    VkDebugUtilsMessengerCallbackDataEXT callback_data{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT};
+    commands.submit(mock_instance, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT,
+                    &callback_data);
+    EXPECT_EQ(downstream_submit_message_calls, 1u);
+    EXPECT_EQ(log.call_count, 0u);
+
+    commands.destroy(mock_instance, messenger, nullptr);
+    EXPECT_EQ(downstream_destroy_messenger_calls, 1u);
 }

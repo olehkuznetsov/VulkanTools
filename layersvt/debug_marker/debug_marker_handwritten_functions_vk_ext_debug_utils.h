@@ -26,6 +26,7 @@ extern "C" {
 // All other functions are simple passthroughs required to be provided so that the layer
 // can claim full support for the extension. Since the layer implements the extension itself,
 // the downstream may lack it, so passthroughs skip downstream dispatch when it is unavailable.
+// Messenger commands are forwarded when the downstream supports them and emulated by the layer otherwise.
 
 // Required for VK_EXT_debug_utils
 VKAPI_ATTR void VKAPI_CALL vkCmdBeginDebugUtilsLabelEXT(VkCommandBuffer commandBuffer, const VkDebugUtilsLabelEXT* pLabelInfo) {
@@ -71,33 +72,34 @@ VKAPI_ATTR void VKAPI_CALL vkQueueInsertDebugUtilsLabelEXT(VkQueue queue, const 
     layersvt::DispatchDownstreamIfAvailable<&VkuDeviceDispatchTable::QueueInsertDebugUtilsLabelEXT>(queue, pLabelInfo);
 }
 
-// Passthrough required for VK_EXT_debug_utils. If the downstream lacks the extension, no messenger
-// is created and VK_NULL_HANDLE is returned so that the output handle is never left uninitialized.
+// Required for VK_EXT_debug_utils. If the downstream lacks the extension, the messenger is emulated.
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateDebugUtilsMessengerEXT(VkInstance instance,
                                                               const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
                                                               const VkAllocationCallbacks* pAllocator,
                                                               VkDebugUtilsMessengerEXT* pMessenger) {
     return layersvt::DispatchDownstreamOr<&VkuInstanceDispatchTable::CreateDebugUtilsMessengerEXT>(
-        [pMessenger] {
-            *pMessenger = VK_NULL_HANDLE;
-            return VK_SUCCESS;
+        [instance, pCreateInfo, pMessenger] {
+            return DebugMarker::Get().CreateEmulatedMessenger(instance, pCreateInfo, pMessenger);
         },
         instance, pCreateInfo, pAllocator, pMessenger);
 }
 
-// Passthrough required for VK_EXT_debug_utils
+// Required for VK_EXT_debug_utils. If the downstream lacks the extension, the messenger is emulated.
 VKAPI_ATTR void VKAPI_CALL vkDestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT messenger,
                                                            const VkAllocationCallbacks* pAllocator) {
-    layersvt::DispatchDownstreamIfAvailable<&VkuInstanceDispatchTable::DestroyDebugUtilsMessengerEXT>(instance, messenger,
-                                                                                                      pAllocator);
+    layersvt::DispatchDownstreamOr<&VkuInstanceDispatchTable::DestroyDebugUtilsMessengerEXT>(
+        [messenger] { DebugMarker::Get().DestroyEmulatedMessenger(messenger); }, instance, messenger, pAllocator);
 }
 
-// Passthrough required for VK_EXT_debug_utils
+// Required for VK_EXT_debug_utils. If the downstream lacks the extension, emulated messengers are invoked.
 VKAPI_ATTR void VKAPI_CALL vkSubmitDebugUtilsMessageEXT(VkInstance instance, VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
                                                         VkDebugUtilsMessageTypeFlagsEXT messageTypes,
                                                         const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData) {
-    layersvt::DispatchDownstreamIfAvailable<&VkuInstanceDispatchTable::SubmitDebugUtilsMessageEXT>(instance, messageSeverity,
-                                                                                                   messageTypes, pCallbackData);
+    layersvt::DispatchDownstreamOr<&VkuInstanceDispatchTable::SubmitDebugUtilsMessageEXT>(
+        [instance, messageSeverity, messageTypes, pCallbackData] {
+            DebugMarker::Get().SubmitEmulatedMessage(instance, messageSeverity, messageTypes, pCallbackData);
+        },
+        instance, messageSeverity, messageTypes, pCallbackData);
 }
 
 }  // extern "C"

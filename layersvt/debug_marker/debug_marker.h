@@ -21,6 +21,7 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include "common/dispatch_downstream.h"
 #include "common/layer_base.h"
@@ -81,11 +82,27 @@ class DebugMarker : public layersvt::LayerBase {
      */
     bool HasDebugObjectName(int32_t type, uint64_t handle, const std::string& name);
 
+    /**
+     * @brief Emulated VK_EXT_debug_utils messengers, used for instances whose downstream lacks the
+     * extension so that the commands advertised by this layer remain functional.
+     */
+    VkResult CreateEmulatedMessenger(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
+                                     VkDebugUtilsMessengerEXT* pMessenger);
+    void DestroyEmulatedMessenger(VkDebugUtilsMessengerEXT messenger);
+    void SubmitEmulatedMessage(VkInstance instance, VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                               VkDebugUtilsMessageTypeFlagsEXT messageTypes,
+                               const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData);
+
    protected:
     /**
      * Lifecycle hook called before vkCreateInstance.
      */
     void PreCreateInstance(VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator) override;
+
+    /**
+     * Lifecycle hook called before vkDestroyInstance to remove the instance's emulated messengers.
+     */
+    void PreDestroyInstance(VkInstance instance, const VkAllocationCallbacks* pAllocator) override;
 
     /**
      * Lifecycle hook called before vkDestroyDevice to remove tracked names for destroyed objects.
@@ -116,4 +133,16 @@ class DebugMarker : public layersvt::LayerBase {
      * We use a pair as the key because handles are not guaranteed to be unique across different object types.
      */
     std::map<std::pair<int32_t, uint64_t>, DebugObjectName> debug_object_names_;
+
+    struct EmulatedMessenger {
+        VkInstance instance;
+        VkDebugUtilsMessengerCreateInfoEXT create_info;
+    };
+
+    /**
+     * @brief Maps an emulated messenger handle to its owning instance and creation parameters.
+     * Handles are unique non-zero counter values.
+     */
+    std::map<uint64_t, EmulatedMessenger> emulated_messengers_;
+    uint64_t next_emulated_messenger_ = 1;
 };
