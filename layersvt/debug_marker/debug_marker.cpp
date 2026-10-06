@@ -48,6 +48,18 @@ void DebugMarker::PreCreateInstance(VkInstanceCreateInfo* pCreateInfo, const VkA
     std::call_once(perfetto_initialization_flag, []() { InitializeDebugMarkerPerfetto(); });
 }
 
+void DebugMarker::PreDestroyInstance(VkInstance instance, const VkAllocationCallbacks* pAllocator) {
+    (void)pAllocator;
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto it = emulated_messengers_.begin(); it != emulated_messengers_.end();) {
+        if (it->second.instance == instance) {
+            it = emulated_messengers_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 void DebugMarker::PreDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator) {
     (void)pAllocator;
     std::lock_guard<std::mutex> lock(mutex_);
@@ -106,9 +118,46 @@ bool DebugMarker::HasDebugObjectName(int32_t type, uint64_t handle, const std::s
     return it->second.name == name;
 }
 
+VkResult DebugMarker::CreateEmulatedMessenger(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
+                                              VkDebugUtilsMessengerEXT* pMessenger) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    uint64_t handle = next_emulated_messenger_++;
+    EmulatedMessenger& messenger = emulated_messengers_[handle];
+    messenger.instance = instance;
+    messenger.create_info = *pCreateInfo;
+    // The pNext chain is owned by the application and is not used by the emulation.
+    messenger.create_info.pNext = nullptr;
+    *pMessenger = (VkDebugUtilsMessengerEXT)handle;
+    return VK_SUCCESS;
+}
+
+void DebugMarker::DestroyEmulatedMessenger(VkDebugUtilsMessengerEXT messenger) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    emulated_messengers_.erase((uint64_t)messenger);
+}
+
+void DebugMarker::SubmitEmulatedMessage(VkInstance instance, VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                                        VkDebugUtilsMessageTypeFlagsEXT messageTypes,
+                                        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData) {
+    std::vector<VkDebugUtilsMessengerCreateInfoEXT> matching;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const auto& entry : emulated_messengers_) {
+            const VkDebugUtilsMessengerCreateInfoEXT& info = entry.second.create_info;
+            if (entry.second.instance == instance && (info.messageSeverity & messageSeverity) != 0 &&
+                (info.messageType & messageTypes) != 0) {
+                matching.push_back(info);
+            }
+        }
+    }
+    // Invoke callbacks without holding the lock so that they may call back into the layer.
+    for (const auto& info : matching) {
+        info.pfnUserCallback(messageSeverity, messageTypes, pCallbackData, info.pUserData);
+    }
+}
+
 PFN_vkVoidFunction DebugMarker::GetLayerInstanceCommand(VkInstance instance, const char* name) {
     (void)instance;
-    if (!name) return nullptr;
     if (strcmp(name, "vkCreateDebugUtilsMessengerEXT") == 0)
         return reinterpret_cast<PFN_vkVoidFunction>(vkCreateDebugUtilsMessengerEXT);
     if (strcmp(name, "vkDestroyDebugUtilsMessengerEXT") == 0)
@@ -120,7 +169,6 @@ PFN_vkVoidFunction DebugMarker::GetLayerInstanceCommand(VkInstance instance, con
 
 PFN_vkVoidFunction DebugMarker::GetLayerDeviceCommand(VkDevice device, const char* name) {
     (void)device;
-    if (!name) return nullptr;
 
     // VK_EXT_debug_marker
     if (strcmp(name, "vkCmdDebugMarkerBeginEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkCmdDebugMarkerBeginEXT);
