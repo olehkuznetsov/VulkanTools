@@ -1646,33 +1646,49 @@ VKAPI_ATTR void VKAPI_CALL DestroyDevice(VkDevice device, const VkAllocationCall
     }
 }
 
-VKAPI_ATTR void VKAPI_CALL GetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue* pQueue) {
-    DispatchMapStruct* dispMap = get_dispatch_info(device);
-    assert(dispMap);
-    VkuDeviceDispatchTable* pDisp = dispMap->device_dispatch_table;
-    pDisp->GetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
+static void addDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, VkQueue queue, DispatchMapStruct* dispMap) {
+    if (queue == VK_NULL_HANDLE) return;
 
     // Save the device queue in a map if we are taking screenshots.
     std::lock_guard<std::mutex> lg(globalLock);
 
     // Add this queue to deviceMap[device].queues, and queueFamilyIndex to deviceMap[device].queueIndexMap
     if (deviceMap.find(device) != deviceMap.end()) {
-        deviceMap[device]->queues.emplace(*pQueue);
+        deviceMap[device]->queues.emplace(queue);
 
-        if (deviceMap[device]->queueIndexMap.find(*pQueue) != deviceMap[device]->queueIndexMap.end())
-            deviceMap[device]->queueIndexMap.erase(*pQueue);
-        deviceMap[device]->queueIndexMap.emplace(*pQueue, queueFamilyIndex);
+        if (deviceMap[device]->queueIndexMap.find(queue) != deviceMap[device]->queueIndexMap.end())
+            deviceMap[device]->queueIndexMap.erase(queue);
+        deviceMap[device]->queueIndexMap.emplace(queue, queueFamilyIndex);
     }
 
     // queues are dispatchable objects.
     // Create dispatchMap entry with this queue as its key.
     // Copy the device dispatch table to the new dispatch table.
-    VkDevice que = static_cast<VkDevice>(static_cast<void*>(*pQueue));
+    VkDevice que = static_cast<VkDevice>(static_cast<void*>(queue));
     dispatchMap[que] = dispMap;
 }
 
+VKAPI_ATTR void VKAPI_CALL GetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue* pQueue) {
+    DispatchMapStruct* dispMap = get_dispatch_info(device);
+    assert(dispMap);
+    VkuDeviceDispatchTable* pDisp = dispMap->device_dispatch_table;
+    pDisp->GetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
+
+    if (pQueue) {
+        addDeviceQueue(device, queueFamilyIndex, *pQueue, dispMap);
+    }
+}
+
 VKAPI_ATTR void VKAPI_CALL GetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* pQueueInfo, VkQueue* pQueue) {
-    if (pQueueInfo) GetDeviceQueue(device, pQueueInfo->queueFamilyIndex, pQueueInfo->queueIndex, pQueue);
+    if (!pQueueInfo) return;
+    DispatchMapStruct* dispMap = get_dispatch_info(device);
+    assert(dispMap);
+    VkuDeviceDispatchTable* pDisp = dispMap->device_dispatch_table;
+    pDisp->GetDeviceQueue2(device, pQueueInfo, pQueue);
+
+    if (pQueue) {
+        addDeviceQueue(device, pQueueInfo->queueFamilyIndex, *pQueue, dispMap);
+    }
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL CreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR* pCreateInfo,
