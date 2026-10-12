@@ -24,6 +24,8 @@ namespace {
 
 // The packet shares the track event sequence, whose defaults declare an incremental clock, so the
 // absolute timestamp must carry an explicit clock id to not be read as a delta.
+// An empty object_name, emitted by RemoveDebugObjectName, means the object is unnamed from this
+// packet's timestamp on.
 void EmitDebugObjectNamePacket(uint64_t device, int32_t type, uint64_t handle, const std::string& name) {
     perfetto::TrackEvent::Trace([device, type, handle, &name](perfetto::TrackEvent::TraceContext ctx) {
         auto packet = ctx.NewTracePacket();
@@ -94,11 +96,23 @@ void DebugMarker::PreDestroyDevice(VkDevice device, const VkAllocationCallbacks*
 }
 
 void DebugMarker::SetDebugObjectName(uint64_t device, int32_t type, uint64_t handle, const char* name) {
+    if (name == nullptr || name[0] == '\0') {
+        RemoveDebugObjectName(device, type, handle);
+        return;
+    }
+
     std::lock_guard<std::mutex> lock(mutex_);
 
-    std::string name_str = name ? name : "NULL";
+    std::string name_str = name;
     debug_object_names_[std::make_tuple(device, type, handle)] = DebugObjectName(device, type, handle, name_str);
     EmitDebugObjectNamePacket(device, type, handle, name_str);
+}
+
+void DebugMarker::RemoveDebugObjectName(uint64_t device, int32_t type, uint64_t handle) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (debug_object_names_.erase(std::make_tuple(device, type, handle)) == 0) return;
+    // An empty name tells trace consumers the object is unnamed from here on.
+    EmitDebugObjectNamePacket(device, type, handle, std::string());
 }
 
 void DebugMarker::EmitAllDebugMarkers() {
@@ -109,11 +123,11 @@ void DebugMarker::EmitAllDebugMarkers() {
     }
 }
 
-bool DebugMarker::HasDebugObjectName(uint64_t device, int32_t type, uint64_t handle, const std::string& name) {
+std::optional<std::string> DebugMarker::GetDebugObjectName(uint64_t device, int32_t type, uint64_t handle) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = debug_object_names_.find(std::make_tuple(device, type, handle));
-    if (it == debug_object_names_.end()) return false;
-    return it->second.name == name;
+    if (it == debug_object_names_.end()) return std::nullopt;
+    return it->second.name;
 }
 
 VkResult DebugMarker::CreateEmulatedMessenger(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,

@@ -20,6 +20,7 @@
 #include <mutex>
 
 #include <map>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -67,9 +68,16 @@ class DebugMarker : public layersvt::LayerBase {
      * @param device The handle of the Vulkan device that owns the object.
      * @param type The type of the Vulkan object (represented as int32_t).
      * @param handle The handle of the Vulkan object.
-     * @param name The name to associate with the object.
+     * @param name The name to associate with the object. A null or empty name removes the object's name,
+     * as VK_EXT_debug_utils defines; the same rule is applied to VK_EXT_debug_marker.
      */
     void SetDebugObjectName(uint64_t device, int32_t type, uint64_t handle, const char* name);
+
+    /**
+     * Removes the name associated with a Vulkan object. If the object was named, emits an empty
+     * name to the trace so consumers treat it as unnamed from then on.
+     */
+    void RemoveDebugObjectName(uint64_t device, int32_t type, uint64_t handle);
 
     /**
      * @brief Emits all stored debug markers to the tracing system.
@@ -77,10 +85,10 @@ class DebugMarker : public layersvt::LayerBase {
     void EmitAllDebugMarkers();
 
     /**
-     * @brief Checks if a debug name is stored for a given object.
-     * @note This function is for testing only.
+     * Returns the name stored for a Vulkan object, or std::nullopt if the object has no name.
+     * For testing only.
      */
-    bool HasDebugObjectName(uint64_t device, int32_t type, uint64_t handle, const std::string& name);
+    std::optional<std::string> GetDebugObjectName(uint64_t device, int32_t type, uint64_t handle) const;
 
     /**
      * @brief Emulated VK_EXT_debug_utils messengers, used for instances whose downstream lacks the
@@ -127,7 +135,7 @@ class DebugMarker : public layersvt::LayerBase {
             : vk_device(dev), object_type(type), handle(h), name(n) {}
     };
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     /**
      * @brief Maps (vk_device, object_type, object_handle) to its debug name information.
      * Non-dispatchable handles are not guaranteed to be unique across object types or devices.
