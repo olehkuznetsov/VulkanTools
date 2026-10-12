@@ -38,6 +38,61 @@ void EmitDebugObjectNamePacket(uint64_t device, int32_t type, uint64_t handle, c
     });
 }
 
+// Names are removed before the downstream call: once destruction returns, the driver may hand out
+// the same handle value to a new object created on another thread.
+template <auto DestroyCommand, VkObjectType ObjectType, typename Handle>
+VKAPI_ATTR void VKAPI_CALL DestroyNamedObject(VkDevice device, Handle handle, const VkAllocationCallbacks* pAllocator) {
+    DebugMarker::Get().RemoveDebugObjectName((uint64_t)device, ObjectType, (uint64_t)handle);
+    layersvt::DispatchDownstream<DestroyCommand>(device, handle, pAllocator);
+}
+
+template <auto DestroyCommand, VkObjectType ObjectType, typename Handle>
+PFN_vkVoidFunction DestroyHookFunction() {
+    return reinterpret_cast<PFN_vkVoidFunction>(&DestroyNamedObject<DestroyCommand, ObjectType, Handle>);
+}
+
+struct DestroyHook {
+    const char* command_name;
+    PFN_vkVoidFunction function;
+    bool is_extension = false;
+};
+
+// Covers object types whose live handles are unique. Samplers, sampler YCbCr conversions, pipeline
+// layouts and descriptor set layouts are excluded: drivers may return the same handle for identical
+// create infos, so destroying one copy must not remove the name of another live copy. Pool-allocated
+// command buffers and descriptor sets are excluded because pools release them without a per-object call.
+const DestroyHook kDestroyHooks[] = {
+    {"vkFreeMemory", DestroyHookFunction<&VkuDeviceDispatchTable::FreeMemory, VK_OBJECT_TYPE_DEVICE_MEMORY, VkDeviceMemory>()},
+    {"vkDestroyBuffer", DestroyHookFunction<&VkuDeviceDispatchTable::DestroyBuffer, VK_OBJECT_TYPE_BUFFER, VkBuffer>()},
+    {"vkDestroyImage", DestroyHookFunction<&VkuDeviceDispatchTable::DestroyImage, VK_OBJECT_TYPE_IMAGE, VkImage>()},
+    {"vkDestroyImageView", DestroyHookFunction<&VkuDeviceDispatchTable::DestroyImageView, VK_OBJECT_TYPE_IMAGE_VIEW, VkImageView>()},
+    {"vkDestroyBufferView",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroyBufferView, VK_OBJECT_TYPE_BUFFER_VIEW, VkBufferView>()},
+    {"vkDestroyFramebuffer",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroyFramebuffer, VK_OBJECT_TYPE_FRAMEBUFFER, VkFramebuffer>()},
+    {"vkDestroyRenderPass",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroyRenderPass, VK_OBJECT_TYPE_RENDER_PASS, VkRenderPass>()},
+    {"vkDestroyPipeline", DestroyHookFunction<&VkuDeviceDispatchTable::DestroyPipeline, VK_OBJECT_TYPE_PIPELINE, VkPipeline>()},
+    {"vkDestroyShaderModule",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroyShaderModule, VK_OBJECT_TYPE_SHADER_MODULE, VkShaderModule>()},
+    {"vkDestroyPipelineCache",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroyPipelineCache, VK_OBJECT_TYPE_PIPELINE_CACHE, VkPipelineCache>()},
+    {"vkDestroyQueryPool", DestroyHookFunction<&VkuDeviceDispatchTable::DestroyQueryPool, VK_OBJECT_TYPE_QUERY_POOL, VkQueryPool>()},
+    {"vkDestroyFence", DestroyHookFunction<&VkuDeviceDispatchTable::DestroyFence, VK_OBJECT_TYPE_FENCE, VkFence>()},
+    {"vkDestroySemaphore", DestroyHookFunction<&VkuDeviceDispatchTable::DestroySemaphore, VK_OBJECT_TYPE_SEMAPHORE, VkSemaphore>()},
+    {"vkDestroyEvent", DestroyHookFunction<&VkuDeviceDispatchTable::DestroyEvent, VK_OBJECT_TYPE_EVENT, VkEvent>()},
+    {"vkDestroyCommandPool",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroyCommandPool, VK_OBJECT_TYPE_COMMAND_POOL, VkCommandPool>()},
+    {"vkDestroyDescriptorPool",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroyDescriptorPool, VK_OBJECT_TYPE_DESCRIPTOR_POOL, VkDescriptorPool>()},
+    {"vkDestroySwapchainKHR",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroySwapchainKHR, VK_OBJECT_TYPE_SWAPCHAIN_KHR, VkSwapchainKHR>(), true},
+    {"vkDestroyAccelerationStructureKHR",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroyAccelerationStructureKHR, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR,
+                         VkAccelerationStructureKHR>(),
+     true},
+};
+
 }  // namespace
 
 DebugMarker::DebugMarker() = default;
@@ -179,7 +234,6 @@ PFN_vkVoidFunction DebugMarker::GetLayerInstanceCommand(VkInstance instance, con
 }
 
 PFN_vkVoidFunction DebugMarker::GetLayerDeviceCommand(VkDevice device, const char* name) {
-    (void)device;
 
     // VK_EXT_debug_marker
     if (strcmp(name, "vkCmdDebugMarkerBeginEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkCmdDebugMarkerBeginEXT);
@@ -205,6 +259,16 @@ PFN_vkVoidFunction DebugMarker::GetLayerDeviceCommand(VkDevice device, const cha
         return reinterpret_cast<PFN_vkVoidFunction>(vkQueueEndDebugUtilsLabelEXT);
     if (strcmp(name, "vkQueueInsertDebugUtilsLabelEXT") == 0)
         return reinterpret_cast<PFN_vkVoidFunction>(vkQueueInsertDebugUtilsLabelEXT);
+
+    for (const DestroyHook& hook : kDestroyHooks) {
+        if (strcmp(name, hook.command_name) != 0) continue;
+        // Extension commands are only intercepted when the downstream device provides them.
+        if (hook.is_extension && device != VK_NULL_HANDLE &&
+            layersvt::DispatchDownstreamOr<&VkuDeviceDispatchTable::GetDeviceProcAddr>(nullptr, device, name) == nullptr) {
+            return nullptr;
+        }
+        return hook.function;
+    }
 
     return nullptr;
 }
