@@ -20,6 +20,26 @@
 #include "perfetto/perfetto.h"
 #include <cstring>
 
+namespace {
+
+// The packet shares the track event sequence, whose defaults declare an incremental clock, so the
+// absolute timestamp must carry an explicit clock id to not be read as a delta.
+void EmitDebugObjectNamePacket(uint64_t device, int32_t type, uint64_t handle, const std::string& name) {
+    perfetto::TrackEvent::Trace([device, type, handle, &name](perfetto::TrackEvent::TraceContext ctx) {
+        auto packet = ctx.NewTracePacket();
+        packet->set_timestamp(perfetto::TrackEvent::GetTraceTimeNs());
+        packet->set_timestamp_clock_id(static_cast<uint32_t>(perfetto::TrackEvent::GetTraceClockId()));
+        auto event = packet->set_vulkan_api_event()->set_vk_debug_utils_object_name();
+        event->set_pid(static_cast<uint32_t>(perfetto::base::GetProcessId()));
+        event->set_vk_device(device);
+        event->set_object_type(type);
+        event->set_object(handle);
+        event->set_object_name(name);
+    });
+}
+
+}  // namespace
+
 DebugMarker::DebugMarker() = default;
 
 const layersvt::LayerManifest* DebugMarker::GetLayerManifest() const {
@@ -78,36 +98,14 @@ void DebugMarker::SetDebugObjectName(uint64_t device, int32_t type, uint64_t han
 
     std::string name_str = name ? name : "NULL";
     debug_object_names_[std::make_pair(type, handle)] = DebugObjectName(device, type, handle, name_str);
-
-    perfetto::TrackEvent::Trace([device, type, handle, name_str](perfetto::TrackEvent::TraceContext ctx) {
-        auto packet = ctx.NewTracePacket();
-        packet->set_timestamp(perfetto::base::GetBootTimeNs().count());
-        auto event = packet->set_vulkan_api_event()->set_vk_debug_utils_object_name();
-        event->set_vk_device(device);
-        event->set_object_type(type);
-        event->set_object(handle);
-        event->set_object_name(name_str.c_str());
-    });
+    EmitDebugObjectNamePacket(device, type, handle, name_str);
 }
 
 void DebugMarker::EmitAllDebugMarkers() {
     std::lock_guard<std::mutex> lock(mutex_);
     for (const auto& entry : debug_object_names_) {
         const auto& marker = entry.second;
-        uint64_t device = marker.vk_device;
-        int32_t type = marker.object_type;
-        uint64_t handle = marker.handle;
-        std::string name_str = marker.name;
-        
-        perfetto::TrackEvent::Trace([device, type, handle, name_str](perfetto::TrackEvent::TraceContext ctx) {
-            auto packet = ctx.NewTracePacket();
-            packet->set_timestamp(perfetto::base::GetBootTimeNs().count());
-            auto event = packet->set_vulkan_api_event()->set_vk_debug_utils_object_name();
-            event->set_vk_device(device);
-            event->set_object_type(type);
-            event->set_object(handle);
-            event->set_object_name(name_str.c_str());
-        });
+        EmitDebugObjectNamePacket(marker.vk_device, marker.object_type, marker.handle, marker.name);
     }
 }
 
