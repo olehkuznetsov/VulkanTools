@@ -194,6 +194,129 @@ TEST_F(DebugMarkerTests, NullOrEmptyNameRemovesNameTest) {
     EXPECT_EQ(DebugMarker::Get().GetDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x4), std::nullopt);
 }
 
+namespace {
+
+uint32_t downstream_destroy_calls = 0;
+
+}  // namespace
+
+TEST_F(DebugMarkerTests, DestroyedObjectNamesRemovedTest) {
+    TEST_DESCRIPTION("Verify freeing memory and destroying buffers and images removes their names and forwards downstream");
+
+    downstream_destroy_calls = 0;
+    void* mock_device_object = reinterpret_cast<void*>(0x7000);
+    VkDevice mock_device = reinterpret_cast<VkDevice>(&mock_device_object);
+    layersvt::LayerBaseTestPeer::GetDispatchTableManager(DebugMarker::Get())
+        .InitDeviceTable(mock_device, [](VkDevice, const char* name) -> PFN_vkVoidFunction {
+            if (strcmp(name, "vkFreeMemory") == 0) {
+                return reinterpret_cast<PFN_vkVoidFunction>(
+                    +[](VkDevice, VkDeviceMemory, const VkAllocationCallbacks*) { ++downstream_destroy_calls; });
+            }
+            if (strcmp(name, "vkDestroyBuffer") == 0) {
+                return reinterpret_cast<PFN_vkVoidFunction>(
+                    +[](VkDevice, VkBuffer, const VkAllocationCallbacks*) { ++downstream_destroy_calls; });
+            }
+            if (strcmp(name, "vkDestroyImage") == 0) {
+                return reinterpret_cast<PFN_vkVoidFunction>(
+                    +[](VkDevice, VkImage, const VkAllocationCallbacks*) { ++downstream_destroy_calls; });
+            }
+            return nullptr;
+        });
+
+    auto free_memory = reinterpret_cast<PFN_vkFreeMemory>(layersvt::LayerBaseTestPeer::GetKnownDeviceCommand("vkFreeMemory"));
+    auto destroy_buffer =
+        reinterpret_cast<PFN_vkDestroyBuffer>(layersvt::LayerBaseTestPeer::GetKnownDeviceCommand("vkDestroyBuffer"));
+    auto destroy_image = reinterpret_cast<PFN_vkDestroyImage>(layersvt::LayerBaseTestPeer::GetKnownDeviceCommand("vkDestroyImage"));
+    ASSERT_NE(free_memory, nullptr);
+    ASSERT_NE(destroy_buffer, nullptr);
+    ASSERT_NE(destroy_image, nullptr);
+
+    const uint64_t device = (uint64_t)mock_device;
+    DebugMarker::Get().SetDebugObjectName(device, VK_OBJECT_TYPE_DEVICE_MEMORY, 0x1, "Memory");
+    DebugMarker::Get().SetDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x2, "Buffer");
+    DebugMarker::Get().SetDebugObjectName(device, VK_OBJECT_TYPE_IMAGE, 0x3, "Image");
+    // A sampler sharing the buffer's handle value must keep its name.
+    DebugMarker::Get().SetDebugObjectName(device, VK_OBJECT_TYPE_SAMPLER, 0x2, "Sampler");
+
+    free_memory(mock_device, (VkDeviceMemory)0x1, nullptr);
+    destroy_buffer(mock_device, (VkBuffer)0x2, nullptr);
+    destroy_image(mock_device, (VkImage)0x3, nullptr);
+
+    EXPECT_EQ(downstream_destroy_calls, 3u);
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(device, VK_OBJECT_TYPE_DEVICE_MEMORY, 0x1, "Memory"));
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x2, "Buffer"));
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(device, VK_OBJECT_TYPE_IMAGE, 0x3, "Image"));
+    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(device, VK_OBJECT_TYPE_SAMPLER, 0x2, "Sampler"));
+}
+
+TEST_F(DebugMarkerTests, DestroyedObjectNamesOfOtherTypesRemovedTest) {
+    TEST_DESCRIPTION("Verify destroying other uniquely-handled objects removes names, while samplers are not intercepted");
+
+    downstream_destroy_calls = 0;
+    void* mock_device_object = reinterpret_cast<void*>(0x8000);
+    VkDevice mock_device = reinterpret_cast<VkDevice>(&mock_device_object);
+    layersvt::LayerBaseTestPeer::GetDispatchTableManager(DebugMarker::Get())
+        .InitDeviceTable(mock_device, [](VkDevice, const char* name) -> PFN_vkVoidFunction {
+            if (strcmp(name, "vkDestroyImageView") == 0) {
+                return reinterpret_cast<PFN_vkVoidFunction>(
+                    +[](VkDevice, VkImageView, const VkAllocationCallbacks*) { ++downstream_destroy_calls; });
+            }
+            if (strcmp(name, "vkDestroyPipeline") == 0) {
+                return reinterpret_cast<PFN_vkVoidFunction>(
+                    +[](VkDevice, VkPipeline, const VkAllocationCallbacks*) { ++downstream_destroy_calls; });
+            }
+            return nullptr;
+        });
+
+    auto destroy_image_view =
+        reinterpret_cast<PFN_vkDestroyImageView>(layersvt::LayerBaseTestPeer::GetKnownDeviceCommand("vkDestroyImageView"));
+    auto destroy_pipeline =
+        reinterpret_cast<PFN_vkDestroyPipeline>(layersvt::LayerBaseTestPeer::GetKnownDeviceCommand("vkDestroyPipeline"));
+    ASSERT_NE(destroy_image_view, nullptr);
+    ASSERT_NE(destroy_pipeline, nullptr);
+    EXPECT_EQ(layersvt::LayerBaseTestPeer::GetKnownDeviceCommand("vkDestroySampler"), nullptr);
+
+    const uint64_t device = (uint64_t)mock_device;
+    DebugMarker::Get().SetDebugObjectName(device, VK_OBJECT_TYPE_IMAGE_VIEW, 0x1, "ImageView");
+    DebugMarker::Get().SetDebugObjectName(device, VK_OBJECT_TYPE_PIPELINE, 0x2, "Pipeline");
+
+    destroy_image_view(mock_device, (VkImageView)0x1, nullptr);
+    destroy_pipeline(mock_device, (VkPipeline)0x2, nullptr);
+
+    EXPECT_EQ(downstream_destroy_calls, 2u);
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(device, VK_OBJECT_TYPE_IMAGE_VIEW, 0x1, "ImageView"));
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(device, VK_OBJECT_TYPE_PIPELINE, 0x2, "Pipeline"));
+}
+
+TEST_F(DebugMarkerTests, ExtensionDestroyCommandRequiresDownstreamTest) {
+    TEST_DESCRIPTION("Verify extension destroy commands are intercepted only when the downstream device provides them");
+
+    void* mock_device_with_swapchain_object = reinterpret_cast<void*>(0x9000);
+    VkDevice mock_device_with_swapchain = reinterpret_cast<VkDevice>(&mock_device_with_swapchain_object);
+    void* mock_device_without_swapchain_object = reinterpret_cast<void*>(0xA000);
+    VkDevice mock_device_without_swapchain = reinterpret_cast<VkDevice>(&mock_device_without_swapchain_object);
+
+    static const PFN_vkVoidFunction downstream_destroy_swapchain =
+        reinterpret_cast<PFN_vkVoidFunction>(+[](VkDevice, VkSwapchainKHR, const VkAllocationCallbacks*) {});
+    layersvt::LayerBaseTestPeer::GetDispatchTableManager(DebugMarker::Get())
+        .InitDeviceTable(mock_device_with_swapchain, [](VkDevice, const char* name) -> PFN_vkVoidFunction {
+            return strcmp(name, "vkDestroySwapchainKHR") == 0 ? downstream_destroy_swapchain : nullptr;
+        });
+    layersvt::LayerBaseTestPeer::GetDispatchTableManager(DebugMarker::Get())
+        .InitDeviceTable(mock_device_without_swapchain, [](VkDevice, const char*) -> PFN_vkVoidFunction { return nullptr; });
+
+    PFN_vkVoidFunction intercepted =
+        layersvt::LayerBaseTestPeer::GetDeviceProcAddr(mock_device_with_swapchain, "vkDestroySwapchainKHR");
+    EXPECT_NE(intercepted, nullptr);
+    EXPECT_NE(intercepted, downstream_destroy_swapchain);
+    EXPECT_EQ(layersvt::LayerBaseTestPeer::GetDeviceProcAddr(mock_device_without_swapchain, "vkDestroySwapchainKHR"), nullptr);
+
+    DebugMarker::Get().SetDebugObjectName((uint64_t)mock_device_with_swapchain, VK_OBJECT_TYPE_SWAPCHAIN_KHR, 0x1, "Swapchain");
+    reinterpret_cast<PFN_vkDestroySwapchainKHR>(intercepted)(mock_device_with_swapchain, (VkSwapchainKHR)0x1, nullptr);
+    EXPECT_FALSE(
+        DebugMarker::Get().HasDebugObjectName((uint64_t)mock_device_with_swapchain, VK_OBJECT_TYPE_SWAPCHAIN_KHR, 0x1, "Swapchain"));
+}
+
 TEST_F(DebugMarkerTests, SameHandleOnDifferentDevicesTest) {
     TEST_DESCRIPTION("Verify identical handles owned by different devices keep separate names");
 
