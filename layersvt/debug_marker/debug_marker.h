@@ -67,9 +67,15 @@ class DebugMarker : public layersvt::LayerBase {
      * @param device The handle of the Vulkan device that owns the object.
      * @param type The type of the Vulkan object (represented as int32_t).
      * @param handle The handle of the Vulkan object.
-     * @param name The name to associate with the object.
+     * @param name The name to associate with the object. A null or empty name removes the object's name.
      */
     void SetDebugObjectName(uint64_t device, int32_t type, uint64_t handle, const char* name);
+
+    /**
+     * Removes the name of an object and, if it was named, emits an empty name to the trace so that
+     * a later object reusing the handle does not inherit it.
+     */
+    void RemoveDebugObjectName(uint64_t device, int32_t type, uint64_t handle);
 
     /**
      * @brief Emits all stored debug markers to the tracing system.

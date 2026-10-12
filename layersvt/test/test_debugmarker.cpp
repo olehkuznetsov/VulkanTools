@@ -173,6 +173,26 @@ TEST_F(DebugMarkerTests, PreDestroyDeviceCleanupTest) {
     EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2"));
 }
 
+TEST_F(DebugMarkerTests, NullOrEmptyNameRemovesNameTest) {
+    TEST_DESCRIPTION("Verify a null or empty object name removes the stored name instead of storing it");
+
+    const uint64_t device = 0x1000;
+    DebugMarker::Get().SetDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x1, "Buffer");
+    DebugMarker::Get().SetDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x1, nullptr);
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x1, "Buffer"));
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x1, "NULL"));
+
+    DebugMarker::Get().SetDebugObjectName(device, VK_OBJECT_TYPE_IMAGE, 0x2, "Image");
+    DebugMarker::Get().SetDebugObjectName(device, VK_OBJECT_TYPE_IMAGE, 0x2, "");
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(device, VK_OBJECT_TYPE_IMAGE, 0x2, "Image"));
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(device, VK_OBJECT_TYPE_IMAGE, 0x2, ""));
+
+    // Removing the name of an object that was never named leaves other names untouched.
+    DebugMarker::Get().SetDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x3, "Other");
+    DebugMarker::Get().RemoveDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x4);
+    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x3, "Other"));
+}
+
 TEST_F(DebugMarkerTests, SameHandleOnDifferentDevicesTest) {
     TEST_DESCRIPTION("Verify identical handles owned by different devices keep separate names");
 

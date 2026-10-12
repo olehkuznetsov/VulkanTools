@@ -94,11 +94,24 @@ void DebugMarker::PreDestroyDevice(VkDevice device, const VkAllocationCallbacks*
 }
 
 void DebugMarker::SetDebugObjectName(uint64_t device, int32_t type, uint64_t handle, const char* name) {
+    // VK_EXT_debug_utils defines a null or empty name as removing the object's name.
+    if (name == nullptr || name[0] == '\0') {
+        RemoveDebugObjectName(device, type, handle);
+        return;
+    }
+
     std::lock_guard<std::mutex> lock(mutex_);
 
-    std::string name_str = name ? name : "NULL";
+    std::string name_str = name;
     debug_object_names_[std::make_tuple(device, type, handle)] = DebugObjectName(device, type, handle, name_str);
     EmitDebugObjectNamePacket(device, type, handle, name_str);
+}
+
+void DebugMarker::RemoveDebugObjectName(uint64_t device, int32_t type, uint64_t handle) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (debug_object_names_.erase(std::make_tuple(device, type, handle)) == 0) return;
+    // The empty name tells trace consumers that the object is unnamed from this timestamp on.
+    EmitDebugObjectNamePacket(device, type, handle, std::string());
 }
 
 void DebugMarker::EmitAllDebugMarkers() {
