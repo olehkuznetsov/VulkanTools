@@ -21,6 +21,7 @@
 
 #include <map>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "common/layer_base.h"
@@ -79,7 +80,7 @@ class DebugMarker : public layersvt::LayerBase {
      * @brief Checks if a debug name is stored for a given object.
      * @note This function is for testing only.
      */
-    bool HasDebugObjectName(int32_t type, uint64_t handle, const std::string& name);
+    bool HasDebugObjectName(uint64_t device, int32_t type, uint64_t handle, const std::string& name);
 
     /**
      * @brief Emulated VK_EXT_debug_utils messengers, used for instances whose downstream lacks the
@@ -128,10 +129,10 @@ class DebugMarker : public layersvt::LayerBase {
 
     std::mutex mutex_;
     /**
-     * @brief Maps a pair of (object_type, object_handle) to its debug name information.
-     * We use a pair as the key because handles are not guaranteed to be unique across different object types.
+     * @brief Maps (vk_device, object_type, object_handle) to its debug name information.
+     * Non-dispatchable handles are not guaranteed to be unique across object types or devices.
      */
-    std::map<std::pair<int32_t, uint64_t>, DebugObjectName> debug_object_names_;
+    std::map<std::tuple<uint64_t, int32_t, uint64_t>, DebugObjectName> debug_object_names_;
 
     struct EmulatedMessenger {
         VkInstance instance;

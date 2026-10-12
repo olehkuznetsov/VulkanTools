@@ -97,7 +97,7 @@ void DebugMarker::SetDebugObjectName(uint64_t device, int32_t type, uint64_t han
     std::lock_guard<std::mutex> lock(mutex_);
 
     std::string name_str = name ? name : "NULL";
-    debug_object_names_[std::make_pair(type, handle)] = DebugObjectName(device, type, handle, name_str);
+    debug_object_names_[std::make_tuple(device, type, handle)] = DebugObjectName(device, type, handle, name_str);
     EmitDebugObjectNamePacket(device, type, handle, name_str);
 }
 
@@ -109,9 +109,9 @@ void DebugMarker::EmitAllDebugMarkers() {
     }
 }
 
-bool DebugMarker::HasDebugObjectName(int32_t type, uint64_t handle, const std::string& name) {
+bool DebugMarker::HasDebugObjectName(uint64_t device, int32_t type, uint64_t handle, const std::string& name) {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto it = debug_object_names_.find(std::make_pair(type, handle));
+    auto it = debug_object_names_.find(std::make_tuple(device, type, handle));
     if (it == debug_object_names_.end()) return false;
     return it->second.name == name;
 }
