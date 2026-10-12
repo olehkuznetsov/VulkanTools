@@ -20,6 +20,7 @@
 #include <mutex>
 
 #include <map>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -63,24 +64,26 @@ class DebugMarker : public layersvt::LayerBase {
     }
 
     /**
-     * @brief Sets or updates the name associated with a Vulkan object.
-     * @param device The handle of the Vulkan device that owns the object.
-     * @param type The type of the Vulkan object (represented as int32_t).
-     * @param handle The handle of the Vulkan object.
-     * @param name The name to associate with the object.
+     * Sets or updates the name associated with a Vulkan object. A null or empty name
+     * removes the object's name.
      */
     void SetDebugObjectName(uint64_t device, int32_t type, uint64_t handle, const char* name);
 
     /**
-     * @brief Emits all stored debug markers to the tracing system.
+     * Removes the name associated with a Vulkan object (no-op if unnamed).
+     */
+    void RemoveDebugObjectName(uint64_t device, int32_t type, uint64_t handle);
+
+    /**
+     * Emits all stored debug markers to the tracing system.
      */
     void EmitAllDebugMarkers();
 
     /**
-     * @brief Checks if a debug name is stored for a given object.
-     * @note This function is for testing only.
+     * Returns the name stored for a Vulkan object, or std::nullopt if the object has no name.
+     * For testing only.
      */
-    bool HasDebugObjectName(uint64_t device, int32_t type, uint64_t handle, const std::string& name);
+    std::optional<std::string> GetDebugObjectName(uint64_t device, int32_t type, uint64_t handle) const;
 
     /**
      * @brief Emulated VK_EXT_debug_utils messengers, used for instances whose downstream lacks the
@@ -127,7 +130,7 @@ class DebugMarker : public layersvt::LayerBase {
             : vk_device(dev), object_type(type), handle(h), name(n) {}
     };
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     /**
      * @brief Maps (vk_device, object_type, object_handle) to its debug name information.
      * Non-dispatchable handles are not guaranteed to be unique across object types or devices.
