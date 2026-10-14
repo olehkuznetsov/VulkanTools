@@ -52,7 +52,8 @@ void DeviceMemoryReport::SetDeviceMemoryProperties(VkDevice device, const VkPhys
 
 void DeviceMemoryReport::SetAllocationMemoryProperties(uint64_t memory_handle, VkMemoryPropertyFlags property_flags) {
     std::lock_guard<std::mutex> lock(counter_mutex_);
-    auto& allocation = memory_allocations_[memory_handle];
+    const AllocationKey key = AllocationKey::App(memory_handle);
+    auto& allocation = memory_allocations_[key];
     allocation.mem_flags = property_flags;
     // An allocation with total_size > 0 represents an active physical memory allocation that
     // has already been recorded and contributed to Perfetto counter tracks.
@@ -63,7 +64,7 @@ void DeviceMemoryReport::SetAllocationMemoryProperties(uint64_t memory_handle, V
     // If total_size == 0, the allocation has not yet been instantiated (or is being configured
     // prior to allocation), so no counter bytes have been emitted to Perfetto yet.
     if (allocation.total_size > 0) {
-        UpdateAllocationUnboundCounter(memory_handle);
+        UpdateAllocationUnboundCounter(key);
     }
 }
 
@@ -172,8 +173,8 @@ void DeviceMemoryReport::SubtractCounterBytes(const std::string& track, uint64_t
     TRACE_COUNTER("VulkanDeviceMemoryReport", GetCounterTrack(track), bytes);
 }
 
-void DeviceMemoryReport::UpdateAllocationUnboundCounter(uint64_t memory_handle) {
-    auto allocation_it = memory_allocations_.find(memory_handle);
+void DeviceMemoryReport::UpdateAllocationUnboundCounter(const AllocationKey& key) {
+    auto allocation_it = memory_allocations_.find(key);
     if (allocation_it == memory_allocations_.end()) return;
     auto& allocation = allocation_it->second;
 
@@ -209,13 +210,14 @@ void DeviceMemoryReport::UpdateAllocationUnboundCounter(uint64_t memory_handle) 
 
     uint64_t new_unbound = (allocation.total_size > bound_size) ? (allocation.total_size - bound_size) : 0;
     
-    const char* cluster_name = "unbound_memory";
+    const char* cluster_name = allocation.is_driver ? "driver" : "unbound_memory";
     if (allocation.is_driver &&
         (allocation.object_type == VK_OBJECT_TYPE_IMAGE ||
          allocation.object_type == VK_OBJECT_TYPE_BUFFER)) {
         auto res_it = resources_.find(allocation.object_handle);
-        // If the memory object has an associated resource with a specific usage, use it as the track name.
-        if (res_it != resources_.end()) {
+        const bool expected_is_image = (allocation.object_type == VK_OBJECT_TYPE_IMAGE);
+        // If the memory object has an associated resource of the matching type, use it as the track name.
+        if (res_it != resources_.end() && res_it->second.is_image == expected_is_image) {
             cluster_name = res_it->second.GetCluster(allocation.mem_flags);
         }
     }
@@ -286,7 +288,7 @@ void DeviceMemoryReport::RemoveResourceBinding(uint64_t resource_handle) {
     uint64_t memory_handle = mem_it->second;
     resource_to_memory_map_.erase(mem_it);
 
-    auto allocation_it = memory_allocations_.find(memory_handle);
+    auto allocation_it = memory_allocations_.find(AllocationKey::App(memory_handle));
     if (allocation_it == memory_allocations_.end()) return;
 
     auto& allocation = allocation_it->second;
@@ -305,7 +307,7 @@ void DeviceMemoryReport::RemoveResourceBinding(uint64_t resource_handle) {
             VkDeviceSize suballocation_offset = it->offset;
             SubtractCounterBytes(it->usage_track, suballocation_size);
             suballocations.erase(it);
-            UpdateAllocationUnboundCounter(memory_handle);
+            UpdateAllocationUnboundCounter(AllocationKey::App(memory_handle));
 
             EmitAllocationTraceEvent({
                 .operation = "DESTROY",
@@ -329,7 +331,8 @@ void DeviceMemoryReport::BindResourceMemory(uint64_t resource_handle, uint64_t m
     // If the same resource handle is passed more than once, remove stale bindings first.
     RemoveResourceBinding(resource_handle);
 
-    auto& allocation = memory_allocations_[memory_handle];
+    const AllocationKey key = AllocationKey::App(memory_handle);
+    auto& allocation = memory_allocations_[key];
     VkDeviceSize res_size = res_it->second.size;
     std::string new_usage_track = GetUsageTrackName(allocation.is_driver, res_it->second.GetCluster(allocation.mem_flags));
 
@@ -341,7 +344,7 @@ void DeviceMemoryReport::BindResourceMemory(uint64_t resource_handle, uint64_t m
 
     // Each distinct virtual resource handle adds its virtual size to its specific category track upon binding.
     AddCounterBytes(new_usage_track, res_size);
-    UpdateAllocationUnboundCounter(memory_handle);
+    UpdateAllocationUnboundCounter(key);
 
     bool is_image = res_it->second.is_image;
     const char* cluster_name = res_it->second.GetCluster(allocation.mem_flags);
@@ -364,8 +367,8 @@ void DeviceMemoryReport::OnBindImageMemory(uint64_t image_handle, uint64_t memor
     BindResourceMemory(image_handle, memory_handle, memory_offset);
 }
 
-void DeviceMemoryReport::RemoveAllocationTracking(uint64_t memory_handle) {
-    auto allocation_it = memory_allocations_.find(memory_handle);
+void DeviceMemoryReport::RemoveAllocationTracking(const AllocationKey& key) {
+    auto allocation_it = memory_allocations_.find(key);
     if (allocation_it == memory_allocations_.end()) return;
 
     auto& allocation = allocation_it->second;
@@ -379,7 +382,7 @@ void DeviceMemoryReport::RemoveAllocationTracking(uint64_t memory_handle) {
         EmitAllocationTraceEvent({
             .operation = "DESTROY",
             .source = is_image ? "IMAGE" : "BUFFER",
-            .memory_object_id = memory_handle,
+            .memory_object_id = key.id,
             .size = suballocation.size,
             .offset = suballocation.offset,
             .object_handle = suballocation.resource_handle,
@@ -421,16 +424,48 @@ void DeviceMemoryReport::Reset() {
     usage_memory_bytes_.clear();
     debug_object_names_.clear();
 }
+
+void DeviceMemoryReport::ReattributeDriverAllocations(uint64_t object_handle, VkObjectType object_type) {
+    for (auto& pair : memory_allocations_) {
+        const AllocationKey& key = pair.first;
+        MemoryAllocation& allocation = pair.second;
+        if (!key.is_driver || allocation.object_type != object_type || allocation.object_handle != object_handle) {
+            continue;
+        }
+        const char* old_cluster_name = allocation.cluster_name;
+        UpdateAllocationUnboundCounter(key);
+        if (allocation.total_size == 0 || std::string_view(old_cluster_name) == allocation.cluster_name) {
+            continue;
+        }
+        // Re-attribution is published as DESTROY (old cluster) + CREATE (new cluster) so that
+        // consumers summing CREATE/DESTROY sizes per memory_type stay balanced.
+        EmitAllocationTraceEvent({
+            .operation = "DESTROY",
+            .source = "DRIVER",
+            .memory_object_id = key.id,
+            .size = allocation.total_size,
+            .offset = 0,
+            .object_handle = allocation.object_handle,
+            .memory_type = old_cluster_name,
+        });
+        EmitAllocationTraceEvent({
+            .operation = "CREATE",
+            .source = "DRIVER",
+            .memory_object_id = key.id,
+            .size = allocation.total_size,
+            .offset = 0,
+            .object_handle = allocation.object_handle,
+            .memory_type = allocation.cluster_name,
+        });
+    }
+}
+
 void DeviceMemoryReport::OnCreateImage(uint64_t image_handle, VkImageUsageFlags usage) {
     std::lock_guard<std::mutex> lock(counter_mutex_);
     auto& res = resources_[image_handle];
     res.is_image = true;
     res.image_usage = usage;
-    for (const auto& pair : memory_allocations_) {
-        if (pair.second.is_driver && pair.second.object_type == VK_OBJECT_TYPE_IMAGE && pair.second.object_handle == image_handle) {
-            UpdateAllocationUnboundCounter(pair.first);
-        }
-    }
+    ReattributeDriverAllocations(image_handle, VK_OBJECT_TYPE_IMAGE);
 }
 
 void DeviceMemoryReport::OnCreateBuffer(uint64_t buffer_handle, VkBufferUsageFlags usage, VkDeviceSize size) {
@@ -439,11 +474,7 @@ void DeviceMemoryReport::OnCreateBuffer(uint64_t buffer_handle, VkBufferUsageFla
     res.is_image = false;
     res.buffer_usage = usage;
     res.size = size;
-    for (const auto& pair : memory_allocations_) {
-        if (pair.second.is_driver && pair.second.object_type == VK_OBJECT_TYPE_BUFFER && pair.second.object_handle == buffer_handle) {
-            UpdateAllocationUnboundCounter(pair.first);
-        }
-    }
+    ReattributeDriverAllocations(buffer_handle, VK_OBJECT_TYPE_BUFFER);
 }
 
 void DeviceMemoryReport::OnDestroyObject(uint64_t object_handle, VkObjectType object_type) {
@@ -528,7 +559,7 @@ void DeviceMemoryReport::DumpCurrentCountersAndAllocations() {
     }
 
     for (const auto& pair : memory_allocations_) {
-        uint64_t memory_handle = pair.first;
+        uint64_t memory_handle = pair.first.id;
         const auto& allocation = pair.second;
         if (allocation.total_size == 0) continue;
 
@@ -570,19 +601,47 @@ void DeviceMemoryReport::DumpCurrentCountersAndAllocations() {
 
 void DeviceMemoryReport::OnMemoryReportEvent(const VkDeviceMemoryReportCallbackDataEXT* pCallbackData) {
     std::lock_guard<std::mutex> lock(counter_mutex_);
-    // For internal driver allocations, a single object (e.g. VkImage) might have multiple distinct memory allocations.
-    // We must use memoryObjectId as the key so each allocation is tracked separately and can be individually freed.
-    // For device memory allocations, objectHandle is the VkDeviceMemory handle, which we use as the key for compatibility.
-    bool is_driver = (pCallbackData->flags & VK_DEVICE_MEMORY_REPORT_FLAG_INTERNAL_OBJECT_BIT_EXT) != 0;
-    uint64_t key = (!is_driver && pCallbackData->objectType == VK_OBJECT_TYPE_DEVICE_MEMORY)
-                       ? pCallbackData->objectHandle
-                       : pCallbackData->memoryObjectId;
+    // Per the VK_EXT_device_memory_report specification, VkDeviceMemoryReportFlagsEXT is reserved and always 0.
+    // Explicit application allocations (vkAllocateMemory / memory imports) report VK_OBJECT_TYPE_DEVICE_MEMORY
+    // with objectHandle set to the VkDeviceMemory handle, which we use as the key for compatibility with Bind*Memory.
+    // Driver-internal allocations report other objectTypes (or VK_OBJECT_TYPE_UNKNOWN) and a single object
+    // (e.g. VkImage) may have multiple distinct memory allocations, so we use memoryObjectId as the key.
+    const bool is_driver = pCallbackData->objectType != VK_OBJECT_TYPE_DEVICE_MEMORY;
+    const AllocationKey key = is_driver ? AllocationKey::Driver(pCallbackData->memoryObjectId)
+                                        : AllocationKey::App(pCallbackData->objectHandle);
+    const char* source = is_driver ? "DRIVER" : "DEVICE_MEMORY";
 
     const char* operation_name = nullptr;
     const char* memory_type = "unbound_memory";
     VkDeviceSize event_size = pCallbackData->size;
+    uint64_t event_object_handle = pCallbackData->objectHandle;
     if (pCallbackData->type == VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATE_EXT ||
         pCallbackData->type == VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_IMPORT_EXT) {
+        // An entry with total_size == 0 is a placeholder created ahead of the allocation (e.g. by
+        // SetAllocationMemoryProperties or BindResourceMemory) and must be kept so its mem_flags and
+        // bindings carry over. An entry with total_size > 0 is a live allocation for which no
+        // FREE/UNIMPORT arrived; retire it (counters and trace) so its bytes do not leak.
+        auto existing_it = memory_allocations_.find(key);
+        if (existing_it != memory_allocations_.end() && existing_it->second.total_size > 0) {
+            const MemoryAllocation& stale = existing_it->second;
+            const char* stale_memory_type = is_driver ? stale.cluster_name : "unbound_memory";
+            const VkDeviceSize stale_size = stale.total_size;
+            const uint64_t stale_object_handle = stale.object_handle;
+            RemoveAllocationTracking(key);
+            EmitAllocationTraceEvent({
+                .operation = "DESTROY",
+                .source = source,
+                .memory_object_id = key.id,
+                .size = stale_size,
+                .offset = 0,
+                .object_handle = stale_object_handle,
+                .memory_type = stale_memory_type,
+            });
+            if (!is_driver &&
+                debug_object_names_.erase(std::make_pair(VK_OBJECT_TYPE_DEVICE_MEMORY, key.id)) > 0) {
+                EmitDebugObjectName(VK_OBJECT_TYPE_DEVICE_MEMORY, key.id, "");
+            }
+        }
         auto& allocation = memory_allocations_[key];
         allocation.total_size = pCallbackData->size;
         allocation.is_driver = is_driver;
@@ -597,6 +656,7 @@ void DeviceMemoryReport::OnMemoryReportEvent(const VkDeviceMemoryReportCallbackD
         if (allocation_iterator != memory_allocations_.end()) {
             memory_type = is_driver ? allocation_iterator->second.cluster_name : "unbound_memory";
             event_size = allocation_iterator->second.total_size;
+            event_object_handle = allocation_iterator->second.object_handle;
             RemoveAllocationTracking(key);
             operation_name = "DESTROY";
         }
@@ -605,20 +665,20 @@ void DeviceMemoryReport::OnMemoryReportEvent(const VkDeviceMemoryReportCallbackD
     if (operation_name != nullptr) {
         EmitAllocationTraceEvent({
             .operation = operation_name,
-            .source = is_driver ? "DRIVER" : "DEVICE_MEMORY",
-            .memory_object_id = key,
+            .source = source,
+            .memory_object_id = key.id,
             .size = event_size,
             .offset = 0,
-            .object_handle = pCallbackData->objectHandle,
+            .object_handle = event_object_handle,
             .memory_type = memory_type,
         });
     }
 
     const bool is_free = pCallbackData->type == VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT ||
                          pCallbackData->type == VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_UNIMPORT_EXT;
-    if (is_free && !is_driver && pCallbackData->objectType == VK_OBJECT_TYPE_DEVICE_MEMORY &&
-        debug_object_names_.erase(std::make_pair(VK_OBJECT_TYPE_DEVICE_MEMORY, key)) > 0) {
-        EmitDebugObjectName(VK_OBJECT_TYPE_DEVICE_MEMORY, key, "");
+    if (is_free && !is_driver &&
+        debug_object_names_.erase(std::make_pair(VK_OBJECT_TYPE_DEVICE_MEMORY, key.id)) > 0) {
+        EmitDebugObjectName(VK_OBJECT_TYPE_DEVICE_MEMORY, key.id, "");
     }
 }
 
@@ -630,7 +690,8 @@ void DeviceMemoryReport::SetHasMemoryReportCallback(VkDevice device, bool has_ca
 void DeviceMemoryReport::OnAllocateMemory(VkDevice device, VkDeviceMemory memory, VkDeviceSize size, uint32_t memory_type_index, VkMemoryPropertyFlags property_flags) {
     std::lock_guard<std::mutex> lock(counter_mutex_);
     uint64_t handle = reinterpret_cast<uint64_t>(memory);
-    auto& allocation = memory_allocations_[handle];
+    const AllocationKey key = AllocationKey::App(handle);
+    auto& allocation = memory_allocations_[key];
 
     VkMemoryPropertyFlags mem_flags = property_flags;
     if (mem_flags == 0 && memory_type_index != UINT32_MAX) {
@@ -644,14 +705,14 @@ void DeviceMemoryReport::OnAllocateMemory(VkDevice device, VkDeviceMemory memory
 
     if (has_callback_map_[device]) {
         if (mem_flags_changed && allocation.total_size > 0) {
-            UpdateAllocationUnboundCounter(handle);
+            UpdateAllocationUnboundCounter(key);
         }
     } else {
         allocation.total_size = size;
         allocation.is_driver = false;
         allocation.object_type = VK_OBJECT_TYPE_DEVICE_MEMORY;
         allocation.object_handle = handle;
-        UpdateAllocationUnboundCounter(handle);
+        UpdateAllocationUnboundCounter(key);
 
         EmitAllocationTraceEvent({
             .operation = "CREATE",
@@ -670,10 +731,11 @@ void DeviceMemoryReport::OnFreeMemory(VkDevice device, VkDeviceMemory memory) {
     if (has_callback_map_[device]) return;
 
     uint64_t handle = reinterpret_cast<uint64_t>(memory);
-    auto allocation_iterator = memory_allocations_.find(handle);
+    const AllocationKey key = AllocationKey::App(handle);
+    auto allocation_iterator = memory_allocations_.find(key);
     if (allocation_iterator != memory_allocations_.end()) {
         VkDeviceSize freed_size = allocation_iterator->second.total_size;
-        RemoveAllocationTracking(handle);
+        RemoveAllocationTracking(key);
 
         EmitAllocationTraceEvent({
             .operation = "DESTROY",

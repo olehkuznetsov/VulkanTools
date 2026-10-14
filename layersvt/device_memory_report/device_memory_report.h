@@ -16,16 +16,13 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <unordered_map>
 #include <string>
 #include <utility>
 #include <vector>
-
-#ifndef VK_DEVICE_MEMORY_REPORT_FLAG_INTERNAL_OBJECT_BIT_EXT
-#define VK_DEVICE_MEMORY_REPORT_FLAG_INTERNAL_OBJECT_BIT_EXT 0x00000001
-#endif
 
 /**
  * @brief Categorizes buffer usage flags and memory property flags into a cluster category name.
@@ -280,6 +277,30 @@ class DeviceMemoryReport {
     };
 
     /**
+     * @brief Key identifying an entry in memory_allocations_.
+     *
+     * Application allocations are keyed by their VkDeviceMemory handle (so vkBind*Memory can find
+     * them), while driver-internal allocations are keyed by the driver-reported memoryObjectId.
+     * These are independent namespaces whose values can numerically collide, so is_driver is part
+     * of the key to keep a driver allocation from clobbering a live application allocation.
+     */
+    struct AllocationKey {
+        bool is_driver = false;
+        uint64_t id = 0;
+
+        static AllocationKey App(uint64_t memory_handle) { return {false, memory_handle}; }
+        static AllocationKey Driver(uint64_t memory_object_id) { return {true, memory_object_id}; }
+
+        bool operator==(const AllocationKey& other) const { return is_driver == other.is_driver && id == other.id; }
+    };
+
+    struct AllocationKeyHash {
+        size_t operator()(const AllocationKey& key) const {
+            return std::hash<uint64_t>{}(key.id) ^ (key.is_driver ? static_cast<size_t>(0x9e3779b97f4a7c15ull) : 0);
+        }
+    };
+
+    /**
      * @brief Tracks metadata for a virtual resource (buffer or image).
      */
     struct Resource {
@@ -305,7 +326,7 @@ class DeviceMemoryReport {
      * @brief Updates unbound memory category counter for a physical memory slab.
      * Unbound memory is allocated device memory not currently bound to any active resource (e.g. buffer or image).
      */
-    void UpdateAllocationUnboundCounter(uint64_t memory_handle);
+    void UpdateAllocationUnboundCounter(const AllocationKey& key);
 
     /**
      * @brief Removes a sub-allocation of a resource from a physical memory slab if bound.
@@ -315,7 +336,19 @@ class DeviceMemoryReport {
     /**
      * @brief Removes all sub-allocations and tracking for a memory slab being freed.
      */
-    void RemoveAllocationTracking(uint64_t memory_handle);
+    void RemoveAllocationTracking(const AllocationKey& key);
+
+    /**
+     * @brief Re-attributes driver allocations associated with a newly created image or buffer.
+     *
+     * Driver-internal allocations for a VkImage/VkBuffer are reported during the create call,
+     * before the layer's post-call hook has recorded the resource's usage. Once the usage is
+     * known, each matching allocation is moved to its resource cluster. When the cluster changes,
+     * a DESTROY event for the old cluster followed by a CREATE event for the new cluster is
+     * emitted so trace consumers can keep per-cluster accounting consistent.
+     * Called while counter_mutex_ is held.
+     */
+    void ReattributeDriverAllocations(uint64_t object_handle, VkObjectType object_type);
 
     /**
      * @brief Republishes every known object name. Called while counter_mutex_ is held.
@@ -368,9 +401,10 @@ class DeviceMemoryReport {
     std::unordered_map<uint64_t, uint64_t> resource_to_memory_map_;
 
     /**
-     * @brief Maps a physical memory handle to its allocation details and sub-allocations.
+     * @brief Maps an allocation key (application VkDeviceMemory handle or driver memoryObjectId)
+     * to its allocation details and sub-allocations.
      */
-    std::unordered_map<uint64_t, MemoryAllocation> memory_allocations_;
+    std::unordered_map<AllocationKey, MemoryAllocation, AllocationKeyHash> memory_allocations_;
 
     /**
      * @brief Maps a usage track name to its current total memory usage in bytes.

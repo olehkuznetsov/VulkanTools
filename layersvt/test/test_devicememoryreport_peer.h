@@ -27,14 +27,14 @@
 
 class DeviceMemoryReportTestPeer {
    public:
+    // Looks up an application allocation by its VkDeviceMemory handle.
     static std::optional<DeviceMemoryReport::MemoryAllocation> FindAllocation(uint64_t memory_handle) {
-        auto& report = DeviceMemoryReport::Get();
-        std::lock_guard<std::mutex> lock(report.counter_mutex_);
-        auto it = report.memory_allocations_.find(memory_handle);
-        if (it == report.memory_allocations_.end()) {
-            return std::nullopt;
-        }
-        return it->second;
+        return FindAllocationByKey(DeviceMemoryReport::AllocationKey::App(memory_handle));
+    }
+
+    // Looks up a driver-internal allocation by its memoryObjectId.
+    static std::optional<DeviceMemoryReport::MemoryAllocation> FindDriverAllocation(uint64_t memory_object_id) {
+        return FindAllocationByKey(DeviceMemoryReport::AllocationKey::Driver(memory_object_id));
     }
 
     static std::optional<DeviceMemoryReport::Resource> FindResource(uint64_t resource_handle) {
@@ -52,5 +52,16 @@ class DeviceMemoryReportTestPeer {
         std::lock_guard<std::mutex> lock(report.counter_mutex_);
         auto it = report.debug_object_names_.find(std::make_pair(object_type, object_handle));
         return it != report.debug_object_names_.end() ? it->second : std::string();
+    }
+
+   private:
+    static std::optional<DeviceMemoryReport::MemoryAllocation> FindAllocationByKey(const DeviceMemoryReport::AllocationKey& key) {
+        auto& report = DeviceMemoryReport::Get();
+        std::lock_guard<std::mutex> lock(report.counter_mutex_);
+        auto it = report.memory_allocations_.find(key);
+        if (it == report.memory_allocations_.end()) {
+            return std::nullopt;
+        }
+        return it->second;
     }
 };
