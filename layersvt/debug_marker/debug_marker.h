@@ -16,11 +16,15 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <cassert>
 #include <mutex>
-#include <unordered_map>
 
 #include <map>
 #include <string>
+#include <vector>
+
+#include "common/layer_base.h"
+#include "common/layer_manifest.h"
 
 /**
  * The DebugMarker class is responsible for storing and managing debug marker
@@ -45,19 +49,17 @@
  * because a user might start another Perfetto session later, requiring us to emit
  * all object names again.
  *
- * A potential issue exists if an application constantly creates and destroys
- * objects without bound, as we currently do not remove names for destroyed objects.
- * Support for removing names on object destruction can be added later if needed.
- *
- * This class is a singleton and provides thread-safe access to its state.
+ * This class is a singleton, inherits from LayerBase, and provides thread-safe access to its state.
  */
-class DebugMarker {
+class DebugMarker : public layersvt::LayerBase {
    public:
-    /**
-     * @brief Returns the singleton instance of the DebugMarker class.
-     * @return Reference to the DebugMarker singleton.
-     */
-    static DebugMarker& Get();
+    DebugMarker();
+    ~DebugMarker() override = default;
+
+    static DebugMarker& Get() {
+        assert(LayerBase::Get() != nullptr && "LayerBase instance must be initialized");
+        return *static_cast<DebugMarker*>(LayerBase::Get());
+    }
 
     /**
      * @brief Sets or updates the name associated with a Vulkan object.
@@ -67,18 +69,12 @@ class DebugMarker {
      * @param name The name to associate with the object.
      */
     void SetDebugObjectName(uint64_t device, int32_t type, uint64_t handle, const char* name);
-    
+
     /**
      * @brief Emits all stored debug markers to the tracing system.
      */
     void EmitAllDebugMarkers();
 
-    /**
-     * @brief Clears all stored debug markers and instance mappings.
-     * @note This function is for testing only.
-     */
-    void Clear();
-    
     /**
      * @brief Checks if a debug name is stored for a given object.
      * @note This function is for testing only.
@@ -86,19 +82,37 @@ class DebugMarker {
     bool HasDebugObjectName(int32_t type, uint64_t handle, const std::string& name);
 
     /**
-     * @brief Associates a Vulkan physical device with its corresponding instance.
-     * @param phys_dev The Vulkan physical device.
-     * @param instance The Vulkan instance.
+     * @brief Emulated VK_EXT_debug_utils messengers, used for instances whose downstream lacks the
+     * extension so that the commands advertised by this layer remain functional.
      */
-    void SetVkInstance(VkPhysicalDevice phys_dev, VkInstance instance);
+    VkResult CreateEmulatedMessenger(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
+                                     VkDebugUtilsMessengerEXT* pMessenger);
+    void DestroyEmulatedMessenger(VkDebugUtilsMessengerEXT messenger);
+    void SubmitEmulatedMessage(VkInstance instance, VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                               VkDebugUtilsMessageTypeFlagsEXT messageTypes,
+                               const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData);
+
+   protected:
+    /**
+     * Lifecycle hook called before vkCreateInstance.
+     */
+    void PreCreateInstance(VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator) override;
 
     /**
-     * @brief Retrieves the Vulkan instance associated with a given physical device.
-     * @param phys_dev The Vulkan physical device.
-     * @return The associated Vulkan instance.
+     * Lifecycle hook called before vkDestroyInstance to remove the instance's emulated messengers.
      */
-    VkInstance GetVkInstance(VkPhysicalDevice phys_dev);
+    void PreDestroyInstance(VkInstance instance, const VkAllocationCallbacks* pAllocator) override;
 
+    /**
+     * Lifecycle hook called before vkDestroyDevice to remove tracked names for destroyed objects.
+     */
+    void PreDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator) override;
+
+    const layersvt::LayerManifest* GetLayerManifest() const override;
+    // VK_EXT_debug_marker and VK_EXT_debug_utils are implemented by this layer, so their commands
+    // are returned unconditionally; the hooks tolerate a downstream that lacks the extension.
+    PFN_vkVoidFunction GetLayerInstanceCommand(VkInstance instance, const char* name) override;
+    PFN_vkVoidFunction GetLayerDeviceCommand(VkDevice device, const char* name) override;
 
    private:
     struct DebugObjectName {
@@ -114,12 +128,20 @@ class DebugMarker {
 
     std::mutex mutex_;
     /**
-     * @brief Maps a physical device handle to its corresponding Vulkan instance handle.
-     */
-    std::unordered_map<VkPhysicalDevice, VkInstance> vk_instance_map_;
-    /**
      * @brief Maps a pair of (object_type, object_handle) to its debug name information.
      * We use a pair as the key because handles are not guaranteed to be unique across different object types.
      */
     std::map<std::pair<int32_t, uint64_t>, DebugObjectName> debug_object_names_;
+
+    struct EmulatedMessenger {
+        VkInstance instance;
+        VkDebugUtilsMessengerCreateInfoEXT create_info;
+    };
+
+    /**
+     * @brief Maps an emulated messenger handle to its owning instance and creation parameters.
+     * Handles are unique non-zero counter values.
+     */
+    std::map<uint64_t, EmulatedMessenger> emulated_messengers_;
+    uint64_t next_emulated_messenger_ = 1;
 };
