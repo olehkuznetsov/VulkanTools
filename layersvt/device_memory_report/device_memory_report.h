@@ -163,17 +163,19 @@ class DeviceMemoryReport {
 
     /**
      * @brief Records the size of a virtual resource (buffer or image) in bytes.
+     * @param object_type The type of the Vulkan resource (VK_OBJECT_TYPE_BUFFER or VK_OBJECT_TYPE_IMAGE).
      * @param resource_handle The 64-bit handle of the Vulkan object.
      * @param size Size in bytes from memory requirements or create info.
      */
-    void OnRecordResourceSize(uint64_t resource_handle, VkDeviceSize size);
+    void OnRecordResourceSize(VkObjectType object_type, uint64_t resource_handle, VkDeviceSize size);
 
     /**
      * @brief Retrieves the recorded size of a virtual resource (for testing).
+     * @param object_type The type of the Vulkan resource (VK_OBJECT_TYPE_BUFFER or VK_OBJECT_TYPE_IMAGE).
      * @param resource_handle The 64-bit handle of the Vulkan object.
      * @return Size in bytes, or 0 if not tracked.
      */
-    VkDeviceSize GetRecordedResourceSize(uint64_t resource_handle);
+    VkDeviceSize GetRecordedResourceSize(VkObjectType object_type, uint64_t resource_handle);
 
     /**
      * @brief Resets all tracked internal state (for testing).
@@ -255,11 +257,21 @@ class DeviceMemoryReport {
      * @brief Represents a sub-allocation of a Vulkan resource (buffer or image) bound within a physical memory allocation.
      */
     struct SubAllocation {
+        VkObjectType object_type;  /**< Type of the bound Vulkan resource (VK_OBJECT_TYPE_BUFFER or VK_OBJECT_TYPE_IMAGE). */
         uint64_t resource_handle;  /**< Handle of the bound Vulkan resource (buffer or image). */
         VkDeviceSize offset;       /**< Offset in bytes within the physical memory allocation where the resource is bound. */
         VkDeviceSize size;         /**< Size in bytes of the sub-allocated resource. */
         std::string usage_track;   /**< Name of the memory usage trace counter category for this sub-allocation. */
     };
+
+    /**
+     * @brief Identifies a Vulkan object as (object_type, handle).
+     *
+     * Non-dispatchable Vulkan handles (VkBuffer, VkImage, VkDeviceMemory) are only unique within
+     * their own object type, so the type is part of the key to prevent colliding handles of
+     * different types from overwriting each other's metadata, bindings or names.
+     */
+    using ObjectKey = std::pair<VkObjectType, uint64_t>;
 
     /**
      * @brief Tracks state and sub-allocations for a physical device memory allocation.
@@ -308,6 +320,7 @@ class DeviceMemoryReport {
         VkImageUsageFlags image_usage = 0;
         VkBufferUsageFlags buffer_usage = 0;
         VkDeviceSize size = 0;
+        uint64_t bound_memory = 0; /**< VkDeviceMemory handle the resource is bound to, or 0 if unbound. */
 
         const char* GetCluster(VkMemoryPropertyFlags mem_flags) const {
             if (is_image) {
@@ -320,7 +333,7 @@ class DeviceMemoryReport {
     /**
      * @brief Helper to bind resource memory (buffers and images).
      */
-    void BindResourceMemory(uint64_t resource_handle, uint64_t memory_handle, VkDeviceSize memory_offset);
+    void BindResourceMemory(VkObjectType object_type, uint64_t resource_handle, uint64_t memory_handle, VkDeviceSize memory_offset);
 
     /**
      * @brief Updates unbound memory category counter for a physical memory slab.
@@ -331,7 +344,7 @@ class DeviceMemoryReport {
     /**
      * @brief Removes a sub-allocation of a resource from a physical memory slab if bound.
      */
-    void RemoveResourceBinding(uint64_t resource_handle);
+    void RemoveResourceBinding(const ObjectKey& resource_key, Resource& resource);
 
     /**
      * @brief Removes all sub-allocations and tracking for a memory slab being freed.
@@ -391,14 +404,9 @@ class DeviceMemoryReport {
     std::unordered_map<VkDevice, VkPhysicalDeviceMemoryProperties> device_memory_properties_map_;
 
     /**
-     * @brief Maps a virtual resource handle to its metadata.
+     * @brief Maps a virtual resource (object type and handle) to its metadata and current binding.
      */
-    std::unordered_map<uint64_t, Resource> resources_;
-
-    /**
-     * @brief Maps a virtual resource handle to the physical memory handle it is bound to.
-     */
-    std::unordered_map<uint64_t, uint64_t> resource_to_memory_map_;
+    std::map<ObjectKey, Resource> resources_;
 
     /**
      * @brief Maps an allocation key (application VkDeviceMemory handle or driver memoryObjectId)
@@ -422,5 +430,5 @@ class DeviceMemoryReport {
      * handle is renamed. Guarded by counter_mutex_. std::map is used instead of unordered_map for
      * pair key support and deterministic replay order.
      */
-    std::map<std::pair<VkObjectType, uint64_t>, std::string> debug_object_names_;
+    std::map<ObjectKey, std::string> debug_object_names_;
 };

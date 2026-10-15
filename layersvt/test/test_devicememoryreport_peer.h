@@ -37,10 +37,10 @@ class DeviceMemoryReportTestPeer {
         return FindAllocationByKey(DeviceMemoryReport::AllocationKey::Driver(memory_object_id));
     }
 
-    static std::optional<DeviceMemoryReport::Resource> FindResource(uint64_t resource_handle) {
+    static std::optional<DeviceMemoryReport::Resource> FindResource(VkObjectType object_type, uint64_t resource_handle) {
         auto& report = DeviceMemoryReport::Get();
         std::lock_guard<std::mutex> lock(report.counter_mutex_);
-        auto it = report.resources_.find(resource_handle);
+        auto it = report.resources_.find({object_type, resource_handle});
         if (it == report.resources_.end()) {
             return std::nullopt;
         }

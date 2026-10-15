@@ -210,7 +210,7 @@ TEST_F(DeviceMemoryReportDispatchTests, ProactiveMemoryRequirementsQuery) {
     VkImage image = VK_NULL_HANDLE;
     ASSERT_EQ(vkCreateImage(device.handle(), &image_info, nullptr, &image), VK_SUCCESS);
     EXPECT_EQ(g_image_requirements_queries, 1);
-    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(AsObjectHandle(image)), 16384u);
+    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(VK_OBJECT_TYPE_IMAGE, AsObjectHandle(image)), 16384u);
 
     VkBufferCreateInfo buffer_info = {};
     buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -221,7 +221,7 @@ TEST_F(DeviceMemoryReportDispatchTests, ProactiveMemoryRequirementsQuery) {
     VkBuffer buffer = VK_NULL_HANDLE;
     ASSERT_EQ(vkCreateBuffer(device.handle(), &buffer_info, nullptr, &buffer), VK_SUCCESS);
     EXPECT_EQ(g_buffer_requirements_queries, 1);
-    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(AsObjectHandle(buffer)), 2048u);
+    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(VK_OBJECT_TYPE_BUFFER, AsObjectHandle(buffer)), 2048u);
 
     vkDestroyImage(device.handle(), image, nullptr);
     vkDestroyBuffer(device.handle(), buffer, nullptr);
@@ -235,13 +235,13 @@ TEST_F(DeviceMemoryReportDispatchTests, BindBufferMemoryQueriesUnknownResourceSi
     VkBuffer buffer = MakeHandle<VkBuffer>(0xB1000);
     VkDeviceMemory memory = MakeHandle<VkDeviceMemory>(0xB1001);
 
-    ASSERT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(AsObjectHandle(buffer)), 0u);
+    ASSERT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(VK_OBJECT_TYPE_BUFFER, AsObjectHandle(buffer)), 0u);
 
     g_buffer_requirements_size = 4096;
     EXPECT_EQ(vkBindBufferMemory(device.handle(), buffer, memory, 0), VK_SUCCESS);
 
     EXPECT_EQ(g_buffer_requirements_queries, 1);
-    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(AsObjectHandle(buffer)), 4096u);
+    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(VK_OBJECT_TYPE_BUFFER, AsObjectHandle(buffer)), 4096u);
 }
 
 TEST_F(DeviceMemoryReportDispatchTests, BindImageMemoryQueriesUnknownResourceSize) {
@@ -249,13 +249,13 @@ TEST_F(DeviceMemoryReportDispatchTests, BindImageMemoryQueriesUnknownResourceSiz
     VkImage image = MakeHandle<VkImage>(0xB2000);
     VkDeviceMemory memory = MakeHandle<VkDeviceMemory>(0xB2001);
 
-    ASSERT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(AsObjectHandle(image)), 0u);
+    ASSERT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(VK_OBJECT_TYPE_IMAGE, AsObjectHandle(image)), 0u);
 
     g_image_requirements_size = 65536;
     EXPECT_EQ(vkBindImageMemory(device.handle(), image, memory, 0), VK_SUCCESS);
 
     EXPECT_EQ(g_image_requirements_queries, 1);
-    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(AsObjectHandle(image)), 65536u);
+    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(VK_OBJECT_TYPE_IMAGE, AsObjectHandle(image)), 65536u);
 }
 
 TEST_F(DeviceMemoryReportDispatchTests, BindMemory2QueriesUnknownResourceSizes) {
@@ -294,10 +294,10 @@ TEST_F(DeviceMemoryReportDispatchTests, BindMemory2QueriesUnknownResourceSizes) 
 
     EXPECT_EQ(g_buffer_requirements_queries, 2);
     EXPECT_EQ(g_image_requirements_queries, 2);
-    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(AsObjectHandle(buffer)), 1024u);
-    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(AsObjectHandle(buffer_khr)), 1024u);
-    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(AsObjectHandle(image)), 8192u);
-    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(AsObjectHandle(image_khr)), 8192u);
+    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(VK_OBJECT_TYPE_BUFFER, AsObjectHandle(buffer)), 1024u);
+    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(VK_OBJECT_TYPE_BUFFER, AsObjectHandle(buffer_khr)), 1024u);
+    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(VK_OBJECT_TYPE_IMAGE, AsObjectHandle(image)), 8192u);
+    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(VK_OBJECT_TYPE_IMAGE, AsObjectHandle(image_khr)), 8192u);
 }
 
 TEST_F(DeviceMemoryReportDispatchTests, BindMemoryKeepsAlreadyRecordedSizes) {
@@ -307,8 +307,8 @@ TEST_F(DeviceMemoryReportDispatchTests, BindMemoryKeepsAlreadyRecordedSizes) {
     VkImage image = MakeHandle<VkImage>(0xB4001);
     VkDeviceMemory memory = MakeHandle<VkDeviceMemory>(0xB4002);
 
-    DeviceMemoryReport::Get().OnRecordResourceSize(AsObjectHandle(buffer), 2048);
-    DeviceMemoryReport::Get().OnRecordResourceSize(AsObjectHandle(image), 4096);
+    DeviceMemoryReport::Get().OnRecordResourceSize(VK_OBJECT_TYPE_BUFFER, AsObjectHandle(buffer), 2048);
+    DeviceMemoryReport::Get().OnRecordResourceSize(VK_OBJECT_TYPE_IMAGE, AsObjectHandle(image), 4096);
 
     g_buffer_requirements_size = 999;
     g_image_requirements_size = 999;
@@ -318,8 +318,8 @@ TEST_F(DeviceMemoryReportDispatchTests, BindMemoryKeepsAlreadyRecordedSizes) {
 
     EXPECT_EQ(g_buffer_requirements_queries, 0);
     EXPECT_EQ(g_image_requirements_queries, 0);
-    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(AsObjectHandle(buffer)), 2048u);
-    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(AsObjectHandle(image)), 4096u);
+    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(VK_OBJECT_TYPE_BUFFER, AsObjectHandle(buffer)), 2048u);
+    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(VK_OBJECT_TYPE_IMAGE, AsObjectHandle(image)), 4096u);
 }
 
 TEST_F(DeviceMemoryReportDispatchTests, BindImageMemory2SkipsDisjointImagePlaneBind) {
@@ -330,7 +330,7 @@ TEST_F(DeviceMemoryReportDispatchTests, BindImageMemory2SkipsDisjointImagePlaneB
     VkImage image = MakeHandle<VkImage>(0xB4800);
     VkDeviceMemory memory = MakeHandle<VkDeviceMemory>(0xB4801);
 
-    ASSERT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(AsObjectHandle(image)), 0u);
+    ASSERT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(VK_OBJECT_TYPE_IMAGE, AsObjectHandle(image)), 0u);
 
     VkBindImagePlaneMemoryInfo plane_info = {};
     plane_info.sType = VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO;
@@ -351,7 +351,7 @@ TEST_F(DeviceMemoryReportDispatchTests, BindImageMemory2SkipsDisjointImagePlaneB
     EXPECT_EQ(vkBindImageMemory2(device.handle(), 1, &image_bind), VK_SUCCESS);
 
     EXPECT_EQ(g_image_requirements_queries, 0);
-    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(AsObjectHandle(image)), 0u);
+    EXPECT_EQ(DeviceMemoryReport::Get().GetRecordedResourceSize(VK_OBJECT_TYPE_IMAGE, AsObjectHandle(image)), 0u);
 }
 
 TEST_F(DeviceMemoryReportDispatchTests, SetDebugUtilsObjectNameStandaloneAndChained) {
