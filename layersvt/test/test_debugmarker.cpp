@@ -15,6 +15,7 @@
 
 #include "layer_test_helper.h"
 #include "../debug_marker/debug_marker.h"
+#include "../debug_marker/debug_marker_perfetto.h"
 #include <vulkan/vulkan_core.h>
 #include <gtest/gtest.h>
 #include <stdlib.h>
@@ -429,4 +430,64 @@ TEST_F(DebugMarkerTests, ForwardedDebugUtilsMessengerTest) {
 
     commands.destroy(mock_instance, messenger, nullptr);
     EXPECT_EQ(downstream_destroy_messenger_calls, 1u);
+}
+
+TEST_F(DebugMarkerTests, ObjectNamePacketFieldsTest) {
+    TEST_DESCRIPTION("Verify emitted VkDebugUtilsObjectName TracePacket has timestamp_clock_id, pid, and object name fields");
+
+    perfetto::TracingInitArgs args;
+    args.backends = perfetto::kInProcessBackend;
+    perfetto::Tracing::Initialize(args);
+    perfetto::TrackEvent::Register();
+
+    perfetto::TraceConfig cfg;
+    cfg.add_buffers()->set_size_kb(1024);
+    auto* ds_cfg = cfg.add_data_sources()->mutable_config();
+    ds_cfg->set_name("track_event");
+
+    auto tracing_session = perfetto::Tracing::NewTrace();
+    ASSERT_NE(tracing_session, nullptr);
+    tracing_session->Setup(cfg);
+    tracing_session->StartBlocking();
+
+    constexpr uint64_t kDevice = 0x1234u;
+    constexpr int32_t kObjectType = VK_OBJECT_TYPE_BUFFER;
+    constexpr uint64_t kObjectHandle = 0x5678u;
+    constexpr const char* kObjectName = "TestBufferName";
+
+    DebugMarker::Get().SetDebugObjectName(kDevice, kObjectType, kObjectHandle, kObjectName);
+
+    perfetto::TrackEvent::Flush();
+    tracing_session->StopBlocking();
+    std::vector<char> raw_trace = tracing_session->ReadTraceBlocking();
+    ASSERT_FALSE(raw_trace.empty());
+
+    perfetto::protos::pbzero::Trace::Decoder trace(reinterpret_cast<const uint8_t*>(raw_trace.data()), raw_trace.size());
+    bool found = false;
+    for (auto it = trace.packet(); it; ++it) {
+        perfetto::protos::pbzero::TracePacket::Decoder packet(*it);
+        if (!packet.has_vulkan_api_event()) {
+            continue;
+        }
+        perfetto::protos::pbzero::VulkanApiEvent::Decoder vk_event(packet.vulkan_api_event());
+        if (!vk_event.has_vk_debug_utils_object_name()) {
+            continue;
+        }
+        perfetto::protos::pbzero::VulkanApiEvent_VkDebugUtilsObjectName::Decoder event(
+            vk_event.vk_debug_utils_object_name());
+        if (event.object() != kObjectHandle) {
+            continue;
+        }
+        found = true;
+        EXPECT_TRUE(packet.has_timestamp());
+        EXPECT_TRUE(packet.has_timestamp_clock_id());
+        EXPECT_EQ(packet.timestamp_clock_id(), static_cast<uint32_t>(perfetto::TrackEvent::GetTraceClockId()));
+        EXPECT_TRUE(event.has_pid());
+        EXPECT_EQ(event.pid(), static_cast<uint32_t>(perfetto::base::GetProcessId()));
+        EXPECT_EQ(event.vk_device(), kDevice);
+        EXPECT_EQ(event.object_type(), kObjectType);
+        EXPECT_EQ(event.object(), kObjectHandle);
+        EXPECT_EQ(event.object_name().ToStdString(), kObjectName);
+    }
+    EXPECT_TRUE(found);
 }
