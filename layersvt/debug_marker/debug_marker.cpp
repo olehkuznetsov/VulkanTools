@@ -151,12 +151,12 @@ void DebugMarker::PreDestroyInstance(VkInstance instance, const VkAllocationCall
 void DebugMarker::PreDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator) {
     (void)pAllocator;
     uint64_t dev_handle = (uint64_t)device;
-    std::vector<DebugObjectName> removed_names;
+    std::vector<DebugObjectKey> removed_objects;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         for (auto it = debug_object_names_.begin(); it != debug_object_names_.end();) {
-            if (it->second.vk_device == dev_handle) {
-                removed_names.push_back(std::move(it->second));
+            if (it->first.vk_device == dev_handle) {
+                removed_objects.push_back(it->first);
                 it = debug_object_names_.erase(it);
             } else {
                 ++it;
@@ -166,7 +166,7 @@ void DebugMarker::PreDestroyDevice(VkDevice device, const VkAllocationCallbacks*
     // Tell trace consumers that the objects of this device are unnamed from here on. The packets are
     // emitted after mutex_ is released, because the session start observer takes mutex_ from the tracing
     // thread (EmitAllDebugMarkers). The device is still alive here, so its handles cannot be reused yet.
-    for (const auto& removed : removed_names) {
+    for (const auto& removed : removed_objects) {
         EmitDebugObjectNamePacket(removed.vk_device, removed.object_type, removed.handle, std::string());
     }
 }
@@ -180,13 +180,13 @@ void DebugMarker::SetDebugObjectName(uint64_t device, int32_t type, uint64_t han
     std::lock_guard<std::mutex> lock(mutex_);
 
     std::string name_str = name;
-    debug_object_names_[std::make_tuple(device, type, handle)] = DebugObjectName(device, type, handle, name_str);
+    debug_object_names_[{device, type, handle}] = name_str;
     EmitDebugObjectNamePacket(device, type, handle, name_str);
 }
 
 void DebugMarker::RemoveDebugObjectName(uint64_t device, int32_t type, uint64_t handle) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (debug_object_names_.erase(std::make_tuple(device, type, handle)) == 0) return;
+    if (debug_object_names_.erase({device, type, handle}) == 0) return;
     // An empty name tells trace consumers the object is unnamed from here on.
     EmitDebugObjectNamePacket(device, type, handle, std::string());
 }
@@ -194,16 +194,16 @@ void DebugMarker::RemoveDebugObjectName(uint64_t device, int32_t type, uint64_t 
 void DebugMarker::EmitAllDebugMarkers() {
     std::lock_guard<std::mutex> lock(mutex_);
     for (const auto& entry : debug_object_names_) {
-        const auto& marker = entry.second;
-        EmitDebugObjectNamePacket(marker.vk_device, marker.object_type, marker.handle, marker.name);
+        const DebugObjectKey& key = entry.first;
+        EmitDebugObjectNamePacket(key.vk_device, key.object_type, key.handle, entry.second);
     }
 }
 
 std::optional<std::string> DebugMarker::GetDebugObjectName(uint64_t device, int32_t type, uint64_t handle) const {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto it = debug_object_names_.find(std::make_tuple(device, type, handle));
+    auto it = debug_object_names_.find({device, type, handle});
     if (it == debug_object_names_.end()) return std::nullopt;
-    return it->second.name;
+    return it->second;
 }
 
 VkResult DebugMarker::CreateEmulatedMessenger(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,

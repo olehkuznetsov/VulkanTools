@@ -159,20 +159,20 @@ TEST_F(DebugMarkerTests, PreDestroyDeviceCleanupTest) {
         });
 
     DebugMarker::Get().SetDebugObjectName((uint64_t)dev1, VK_OBJECT_TYPE_BUFFER, 0x1111, "Buffer1");
-    DebugMarker::Get().SetDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2");
+    DebugMarker::Get().SetDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x1111, "Buffer2");
 
     EXPECT_EQ(DebugMarker::Get().GetDebugObjectName((uint64_t)dev1, VK_OBJECT_TYPE_BUFFER, 0x1111), "Buffer1");
-    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222), "Buffer2");
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x1111), "Buffer2");
 
     // Destroy dev1 - should remove Buffer1 but keep Buffer2
     layersvt::LayerBaseTestPeer::DestroyDevice(dev1, nullptr);
 
     EXPECT_EQ(DebugMarker::Get().GetDebugObjectName((uint64_t)dev1, VK_OBJECT_TYPE_BUFFER, 0x1111), std::nullopt);
-    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222), "Buffer2");
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x1111), "Buffer2");
 
     // Destroy dev2 - should remove Buffer2
     layersvt::LayerBaseTestPeer::DestroyDevice(dev2, nullptr);
-    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222), std::nullopt);
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x1111), std::nullopt);
 }
 
 TEST_F(DebugMarkerTests, NullOrEmptyNameRemovesNameTest) {
