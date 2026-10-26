@@ -60,16 +60,15 @@ TEST_F(DebugMarkerTests, CombinedTest) {
     // 1. Set instance name
     DebugMarker::Get().SetDebugObjectName(0, VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance, "MyInstance");
 
-    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(0, VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance, "MyInstance"));
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName(0, VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance), "MyInstance");
 
     // 2. Override new name
     DebugMarker::Get().SetDebugObjectName(0, VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance, "MyInstanceRenamed");
-    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(0, VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance, "MyInstanceRenamed"));
-    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(0, VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance, "MyInstance"));
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName(0, VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance), "MyInstanceRenamed");
 
     // 3. Reset
     layer_test::ResetLayer<DebugMarker>();
-    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(0, VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance, "MyInstanceRenamed"));
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName(0, VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance), std::nullopt);
 }
 
 TEST_F(DebugMarkerTests, ManifestTest) {
@@ -160,18 +159,39 @@ TEST_F(DebugMarkerTests, PreDestroyDeviceCleanupTest) {
     DebugMarker::Get().SetDebugObjectName((uint64_t)dev1, VK_OBJECT_TYPE_BUFFER, 0x1111, "Buffer1");
     DebugMarker::Get().SetDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2");
 
-    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName((uint64_t)dev1, VK_OBJECT_TYPE_BUFFER, 0x1111, "Buffer1"));
-    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2"));
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName((uint64_t)dev1, VK_OBJECT_TYPE_BUFFER, 0x1111), "Buffer1");
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222), "Buffer2");
 
     // Destroy dev1 - should remove Buffer1 but keep Buffer2
     layersvt::LayerBaseTestPeer::DestroyDevice(dev1, nullptr);
 
-    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName((uint64_t)dev1, VK_OBJECT_TYPE_BUFFER, 0x1111, "Buffer1"));
-    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2"));
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName((uint64_t)dev1, VK_OBJECT_TYPE_BUFFER, 0x1111), std::nullopt);
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222), "Buffer2");
 
     // Destroy dev2 - should remove Buffer2
     layersvt::LayerBaseTestPeer::DestroyDevice(dev2, nullptr);
-    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2"));
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222), std::nullopt);
+}
+
+TEST_F(DebugMarkerTests, NullOrEmptyNameRemovesNameTest) {
+    TEST_DESCRIPTION("Verify a null or empty object name removes the stored name instead of storing it");
+
+    const uint64_t device = 0x1000;
+    DebugMarker::Get().SetDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x1, "Buffer");
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x1), "Buffer");
+    DebugMarker::Get().SetDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x1, nullptr);
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x1), std::nullopt);
+
+    DebugMarker::Get().SetDebugObjectName(device, VK_OBJECT_TYPE_IMAGE, 0x2, "Image");
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName(device, VK_OBJECT_TYPE_IMAGE, 0x2), "Image");
+    DebugMarker::Get().SetDebugObjectName(device, VK_OBJECT_TYPE_IMAGE, 0x2, "");
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName(device, VK_OBJECT_TYPE_IMAGE, 0x2), std::nullopt);
+
+    // Removing the name of an object that was never named leaves other names untouched.
+    DebugMarker::Get().SetDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x3, "Other");
+    DebugMarker::Get().RemoveDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x4);
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x3), "Other");
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName(device, VK_OBJECT_TYPE_BUFFER, 0x4), std::nullopt);
 }
 
 TEST_F(DebugMarkerTests, SameHandleOnDifferentDevicesTest) {
@@ -196,16 +216,16 @@ TEST_F(DebugMarkerTests, SameHandleOnDifferentDevicesTest) {
     DebugMarker::Get().SetDebugObjectName(device1, VK_OBJECT_TYPE_BUFFER, 0x1, "Device1Buffer");
     DebugMarker::Get().SetDebugObjectName(device2, VK_OBJECT_TYPE_BUFFER, 0x1, "Device2Buffer");
 
-    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(device1, VK_OBJECT_TYPE_BUFFER, 0x1, "Device1Buffer"));
-    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(device2, VK_OBJECT_TYPE_BUFFER, 0x1, "Device2Buffer"));
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName(device1, VK_OBJECT_TYPE_BUFFER, 0x1), "Device1Buffer");
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName(device2, VK_OBJECT_TYPE_BUFFER, 0x1), "Device2Buffer");
 
     // Destroying device1 must keep the name that device2 stores for the same handle.
     layersvt::LayerBaseTestPeer::DestroyDevice(dev1, nullptr);
-    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(device1, VK_OBJECT_TYPE_BUFFER, 0x1, "Device1Buffer"));
-    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(device2, VK_OBJECT_TYPE_BUFFER, 0x1, "Device2Buffer"));
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName(device1, VK_OBJECT_TYPE_BUFFER, 0x1), std::nullopt);
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName(device2, VK_OBJECT_TYPE_BUFFER, 0x1), "Device2Buffer");
 
     layersvt::LayerBaseTestPeer::DestroyDevice(dev2, nullptr);
-    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(device2, VK_OBJECT_TYPE_BUFFER, 0x1, "Device2Buffer"));
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName(device2, VK_OBJECT_TYPE_BUFFER, 0x1), std::nullopt);
 }
 
 TEST_F(DebugMarkerTests, TemplateMethodDispatchTest) {
@@ -287,7 +307,7 @@ TEST_F(DebugMarkerTests, MissingDownstreamExtensionTest) {
     name_info.objectHandle = 0x4444;
     name_info.pObjectName = "Buffer";
     EXPECT_EQ(set_object_name(mock_device, &name_info), VK_SUCCESS);
-    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName((uint64_t)mock_device, VK_OBJECT_TYPE_BUFFER, 0x4444, "Buffer"));
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName((uint64_t)mock_device, VK_OBJECT_TYPE_BUFFER, 0x4444), "Buffer");
 }
 
 namespace {
@@ -467,7 +487,9 @@ TEST_F(DebugMarkerTests, ForwardedDebugUtilsMessengerTest) {
 }
 
 TEST_F(DebugMarkerTests, ObjectNamePacketFieldsTest) {
-    TEST_DESCRIPTION("Verify emitted VkDebugUtilsObjectName TracePacket has timestamp_clock_id, pid, and object name fields");
+    TEST_DESCRIPTION(
+        "Verify emitted VkDebugUtilsObjectName TracePackets have timestamp_clock_id, pid, and object name fields, and that "
+        "removing a name emits an empty name only for named objects");
 
     perfetto::TracingInitArgs args;
     args.backends = perfetto::kInProcessBackend;
@@ -488,8 +510,13 @@ TEST_F(DebugMarkerTests, ObjectNamePacketFieldsTest) {
     constexpr int32_t kObjectType = VK_OBJECT_TYPE_BUFFER;
     constexpr uint64_t kObjectHandle = 0x5678u;
     constexpr const char* kObjectName = "TestBufferName";
+    constexpr uint64_t kUnnamedObjectHandle = 0x9abcu;
 
     DebugMarker::Get().SetDebugObjectName(kDevice, kObjectType, kObjectHandle, kObjectName);
+    // Clearing the name emits a second packet with an empty object name.
+    DebugMarker::Get().SetDebugObjectName(kDevice, kObjectType, kObjectHandle, nullptr);
+    // Removing the name of an object that was never named emits no packet.
+    DebugMarker::Get().RemoveDebugObjectName(kDevice, kObjectType, kUnnamedObjectHandle);
 
     perfetto::TrackEvent::Flush();
     tracing_session->StopBlocking();
@@ -497,7 +524,8 @@ TEST_F(DebugMarkerTests, ObjectNamePacketFieldsTest) {
     ASSERT_FALSE(raw_trace.empty());
 
     perfetto::protos::pbzero::Trace::Decoder trace(reinterpret_cast<const uint8_t*>(raw_trace.data()), raw_trace.size());
-    bool found = false;
+    std::vector<std::string> object_names;
+    bool found_unnamed_object = false;
     for (auto it = trace.packet(); it; ++it) {
         perfetto::protos::pbzero::TracePacket::Decoder packet(*it);
         if (!packet.has_vulkan_api_event()) {
@@ -509,10 +537,13 @@ TEST_F(DebugMarkerTests, ObjectNamePacketFieldsTest) {
         }
         perfetto::protos::pbzero::VulkanApiEvent_VkDebugUtilsObjectName::Decoder event(
             vk_event.vk_debug_utils_object_name());
+        if (event.object() == kUnnamedObjectHandle) {
+            found_unnamed_object = true;
+            continue;
+        }
         if (event.object() != kObjectHandle) {
             continue;
         }
-        found = true;
         EXPECT_TRUE(packet.has_timestamp());
         EXPECT_TRUE(packet.has_timestamp_clock_id());
         EXPECT_EQ(packet.timestamp_clock_id(), static_cast<uint32_t>(perfetto::TrackEvent::GetTraceClockId()));
@@ -521,7 +552,8 @@ TEST_F(DebugMarkerTests, ObjectNamePacketFieldsTest) {
         EXPECT_EQ(event.vk_device(), kDevice);
         EXPECT_EQ(event.object_type(), kObjectType);
         EXPECT_EQ(event.object(), kObjectHandle);
-        EXPECT_EQ(event.object_name().ToStdString(), kObjectName);
+        object_names.push_back(event.object_name().ToStdString());
     }
-    EXPECT_TRUE(found);
+    EXPECT_EQ(object_names, (std::vector<std::string>{kObjectName, ""}));
+    EXPECT_FALSE(found_unnamed_object);
 }
