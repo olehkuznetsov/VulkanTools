@@ -60,16 +60,16 @@ TEST_F(DebugMarkerTests, CombinedTest) {
     // 1. Set instance name
     DebugMarker::Get().SetDebugObjectName(0, VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance, "MyInstance");
 
-    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance, "MyInstance"));
+    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(0, VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance, "MyInstance"));
 
     // 2. Override new name
     DebugMarker::Get().SetDebugObjectName(0, VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance, "MyInstanceRenamed");
-    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance, "MyInstanceRenamed"));
-    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance, "MyInstance"));
+    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(0, VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance, "MyInstanceRenamed"));
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(0, VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance, "MyInstance"));
 
     // 3. Reset
     layer_test::ResetLayer<DebugMarker>();
-    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance, "MyInstanceRenamed"));
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(0, VK_OBJECT_TYPE_INSTANCE, (uint64_t)instance, "MyInstanceRenamed"));
 }
 
 TEST_F(DebugMarkerTests, ManifestTest) {
@@ -160,18 +160,52 @@ TEST_F(DebugMarkerTests, PreDestroyDeviceCleanupTest) {
     DebugMarker::Get().SetDebugObjectName((uint64_t)dev1, VK_OBJECT_TYPE_BUFFER, 0x1111, "Buffer1");
     DebugMarker::Get().SetDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2");
 
-    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(VK_OBJECT_TYPE_BUFFER, 0x1111, "Buffer1"));
-    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2"));
+    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName((uint64_t)dev1, VK_OBJECT_TYPE_BUFFER, 0x1111, "Buffer1"));
+    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2"));
 
     // Destroy dev1 - should remove Buffer1 but keep Buffer2
     layersvt::LayerBaseTestPeer::DestroyDevice(dev1, nullptr);
 
-    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(VK_OBJECT_TYPE_BUFFER, 0x1111, "Buffer1"));
-    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2"));
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName((uint64_t)dev1, VK_OBJECT_TYPE_BUFFER, 0x1111, "Buffer1"));
+    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2"));
 
     // Destroy dev2 - should remove Buffer2
     layersvt::LayerBaseTestPeer::DestroyDevice(dev2, nullptr);
-    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2"));
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName((uint64_t)dev2, VK_OBJECT_TYPE_BUFFER, 0x2222, "Buffer2"));
+}
+
+TEST_F(DebugMarkerTests, SameHandleOnDifferentDevicesTest) {
+    TEST_DESCRIPTION("Verify identical handles owned by different devices keep separate names");
+
+    void* mock_dev1_vtable = reinterpret_cast<void*>(0x1000);
+    VkDevice dev1 = reinterpret_cast<VkDevice>(&mock_dev1_vtable);
+    void* mock_dev2_vtable = reinterpret_cast<void*>(0x2000);
+    VkDevice dev2 = reinterpret_cast<VkDevice>(&mock_dev2_vtable);
+
+    layersvt::LayerBaseTestPeer::GetDispatchTableManager(DebugMarker::Get())
+        .InitDeviceTable(dev1, [](VkDevice, const char*) -> PFN_vkVoidFunction {
+            return reinterpret_cast<PFN_vkVoidFunction>(+[](VkDevice, const VkAllocationCallbacks*) {});
+        });
+    layersvt::LayerBaseTestPeer::GetDispatchTableManager(DebugMarker::Get())
+        .InitDeviceTable(dev2, [](VkDevice, const char*) -> PFN_vkVoidFunction {
+            return reinterpret_cast<PFN_vkVoidFunction>(+[](VkDevice, const VkAllocationCallbacks*) {});
+        });
+
+    const uint64_t device1 = (uint64_t)dev1;
+    const uint64_t device2 = (uint64_t)dev2;
+    DebugMarker::Get().SetDebugObjectName(device1, VK_OBJECT_TYPE_BUFFER, 0x1, "Device1Buffer");
+    DebugMarker::Get().SetDebugObjectName(device2, VK_OBJECT_TYPE_BUFFER, 0x1, "Device2Buffer");
+
+    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(device1, VK_OBJECT_TYPE_BUFFER, 0x1, "Device1Buffer"));
+    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(device2, VK_OBJECT_TYPE_BUFFER, 0x1, "Device2Buffer"));
+
+    // Destroying device1 must keep the name that device2 stores for the same handle.
+    layersvt::LayerBaseTestPeer::DestroyDevice(dev1, nullptr);
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(device1, VK_OBJECT_TYPE_BUFFER, 0x1, "Device1Buffer"));
+    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(device2, VK_OBJECT_TYPE_BUFFER, 0x1, "Device2Buffer"));
+
+    layersvt::LayerBaseTestPeer::DestroyDevice(dev2, nullptr);
+    EXPECT_FALSE(DebugMarker::Get().HasDebugObjectName(device2, VK_OBJECT_TYPE_BUFFER, 0x1, "Device2Buffer"));
 }
 
 TEST_F(DebugMarkerTests, TemplateMethodDispatchTest) {
@@ -253,7 +287,7 @@ TEST_F(DebugMarkerTests, MissingDownstreamExtensionTest) {
     name_info.objectHandle = 0x4444;
     name_info.pObjectName = "Buffer";
     EXPECT_EQ(set_object_name(mock_device, &name_info), VK_SUCCESS);
-    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName(VK_OBJECT_TYPE_BUFFER, 0x4444, "Buffer"));
+    EXPECT_TRUE(DebugMarker::Get().HasDebugObjectName((uint64_t)mock_device, VK_OBJECT_TYPE_BUFFER, 0x4444, "Buffer"));
 }
 
 namespace {
