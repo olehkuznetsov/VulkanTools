@@ -24,6 +24,8 @@ namespace {
 
 // The packet shares the track event sequence, whose defaults declare an incremental clock, so the
 // absolute timestamp must carry an explicit clock id to not be read as a delta.
+// An empty object_name, emitted by RemoveDebugObjectName, means the object is unnamed from this
+// packet's timestamp on.
 void EmitDebugObjectNamePacket(uint64_t device, int32_t type, uint64_t handle, const std::string& name) {
     perfetto::TrackEvent::Trace([device, type, handle, &name](perfetto::TrackEvent::TraceContext ctx) {
         auto packet = ctx.NewTracePacket();
@@ -37,6 +39,72 @@ void EmitDebugObjectNamePacket(uint64_t device, int32_t type, uint64_t handle, c
         event->set_object_name(name.data(), name.size());
     });
 }
+
+// Names are removed before the downstream call: once destruction returns, the driver may hand out
+// the same handle value to a new object created on another thread.
+template <auto DestroyCommand, VkObjectType ObjectType, typename Handle>
+VKAPI_ATTR void VKAPI_CALL DestroyNamedObject(VkDevice device, Handle handle, const VkAllocationCallbacks* pAllocator) {
+    DebugMarker::Get().RemoveDebugObjectName((uint64_t)device, ObjectType, (uint64_t)handle);
+    layersvt::DispatchDownstream<DestroyCommand>(device, handle, pAllocator);
+}
+
+template <auto DestroyCommand, VkObjectType ObjectType, typename Handle>
+PFN_vkVoidFunction DestroyHookFunction() {
+    return reinterpret_cast<PFN_vkVoidFunction>(&DestroyNamedObject<DestroyCommand, ObjectType, Handle>);
+}
+
+struct DestroyHook {
+    const char* command_name;
+    PFN_vkVoidFunction function;
+    bool is_extension = false;
+};
+
+// Covers object types whose live handles are unique in practice. Samplers, sampler YCbCr conversions,
+// pipeline layouts and descriptor set layouts are excluded: drivers may return the same handle for
+// identical create infos, so destroying one copy must not remove the name of another live copy. The spec
+// guarantees unique non-dispatchable handles only when the privateData feature is enabled, so this split
+// is a practical heuristic, not a hard rule.
+//
+// Command buffers and descriptor sets are not covered. vkFreeCommandBuffers and vkFreeDescriptorSets free
+// them one at a time, but take an array of handles, which DestroyNamedObject does not support.
+// vkDestroyCommandPool, vkResetDescriptorPool and vkDestroyDescriptorPool free them implicitly, which needs
+// pool-to-child tracking. Their names stay until the device is destroyed.
+//
+// The list is deliberately partial. VkShaderEXT, VkDescriptorUpdateTemplate, VkVideoSessionKHR,
+// VkVideoSessionParametersKHR and VkMicromapEXT, among others, are not covered yet. Lookup is by command
+// name, so a promoted command also needs an entry for each alias (for example
+// vkDestroyDescriptorUpdateTemplateKHR).
+const DestroyHook kDestroyHooks[] = {
+    {"vkFreeMemory", DestroyHookFunction<&VkuDeviceDispatchTable::FreeMemory, VK_OBJECT_TYPE_DEVICE_MEMORY, VkDeviceMemory>()},
+    {"vkDestroyBuffer", DestroyHookFunction<&VkuDeviceDispatchTable::DestroyBuffer, VK_OBJECT_TYPE_BUFFER, VkBuffer>()},
+    {"vkDestroyImage", DestroyHookFunction<&VkuDeviceDispatchTable::DestroyImage, VK_OBJECT_TYPE_IMAGE, VkImage>()},
+    {"vkDestroyImageView", DestroyHookFunction<&VkuDeviceDispatchTable::DestroyImageView, VK_OBJECT_TYPE_IMAGE_VIEW, VkImageView>()},
+    {"vkDestroyBufferView",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroyBufferView, VK_OBJECT_TYPE_BUFFER_VIEW, VkBufferView>()},
+    {"vkDestroyFramebuffer",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroyFramebuffer, VK_OBJECT_TYPE_FRAMEBUFFER, VkFramebuffer>()},
+    {"vkDestroyRenderPass",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroyRenderPass, VK_OBJECT_TYPE_RENDER_PASS, VkRenderPass>()},
+    {"vkDestroyPipeline", DestroyHookFunction<&VkuDeviceDispatchTable::DestroyPipeline, VK_OBJECT_TYPE_PIPELINE, VkPipeline>()},
+    {"vkDestroyShaderModule",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroyShaderModule, VK_OBJECT_TYPE_SHADER_MODULE, VkShaderModule>()},
+    {"vkDestroyPipelineCache",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroyPipelineCache, VK_OBJECT_TYPE_PIPELINE_CACHE, VkPipelineCache>()},
+    {"vkDestroyQueryPool", DestroyHookFunction<&VkuDeviceDispatchTable::DestroyQueryPool, VK_OBJECT_TYPE_QUERY_POOL, VkQueryPool>()},
+    {"vkDestroyFence", DestroyHookFunction<&VkuDeviceDispatchTable::DestroyFence, VK_OBJECT_TYPE_FENCE, VkFence>()},
+    {"vkDestroySemaphore", DestroyHookFunction<&VkuDeviceDispatchTable::DestroySemaphore, VK_OBJECT_TYPE_SEMAPHORE, VkSemaphore>()},
+    {"vkDestroyEvent", DestroyHookFunction<&VkuDeviceDispatchTable::DestroyEvent, VK_OBJECT_TYPE_EVENT, VkEvent>()},
+    {"vkDestroyCommandPool",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroyCommandPool, VK_OBJECT_TYPE_COMMAND_POOL, VkCommandPool>()},
+    {"vkDestroyDescriptorPool",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroyDescriptorPool, VK_OBJECT_TYPE_DESCRIPTOR_POOL, VkDescriptorPool>()},
+    {"vkDestroySwapchainKHR",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroySwapchainKHR, VK_OBJECT_TYPE_SWAPCHAIN_KHR, VkSwapchainKHR>(), true},
+    {"vkDestroyAccelerationStructureKHR",
+     DestroyHookFunction<&VkuDeviceDispatchTable::DestroyAccelerationStructureKHR, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR,
+                         VkAccelerationStructureKHR>(),
+     true},
+};
 
 }  // namespace
 
@@ -82,23 +150,45 @@ void DebugMarker::PreDestroyInstance(VkInstance instance, const VkAllocationCall
 
 void DebugMarker::PreDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator) {
     (void)pAllocator;
-    std::lock_guard<std::mutex> lock(mutex_);
     uint64_t dev_handle = (uint64_t)device;
-    for (auto it = debug_object_names_.begin(); it != debug_object_names_.end();) {
-        if (it->second.vk_device == dev_handle) {
-            it = debug_object_names_.erase(it);
-        } else {
-            ++it;
+    std::vector<DebugObjectName> removed_names;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (auto it = debug_object_names_.begin(); it != debug_object_names_.end();) {
+            if (it->second.vk_device == dev_handle) {
+                removed_names.push_back(std::move(it->second));
+                it = debug_object_names_.erase(it);
+            } else {
+                ++it;
+            }
         }
+    }
+    // Tell trace consumers that the objects of this device are unnamed from here on. The packets are
+    // emitted after mutex_ is released, because the session start observer takes mutex_ from the tracing
+    // thread (EmitAllDebugMarkers). The device is still alive here, so its handles cannot be reused yet.
+    for (const auto& removed : removed_names) {
+        EmitDebugObjectNamePacket(removed.vk_device, removed.object_type, removed.handle, std::string());
     }
 }
 
 void DebugMarker::SetDebugObjectName(uint64_t device, int32_t type, uint64_t handle, const char* name) {
+    if (name == nullptr || name[0] == '\0') {
+        RemoveDebugObjectName(device, type, handle);
+        return;
+    }
+
     std::lock_guard<std::mutex> lock(mutex_);
 
-    std::string name_str = name ? name : "NULL";
-    debug_object_names_[std::make_pair(type, handle)] = DebugObjectName(device, type, handle, name_str);
+    std::string name_str = name;
+    debug_object_names_[std::make_tuple(device, type, handle)] = DebugObjectName(device, type, handle, name_str);
     EmitDebugObjectNamePacket(device, type, handle, name_str);
+}
+
+void DebugMarker::RemoveDebugObjectName(uint64_t device, int32_t type, uint64_t handle) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (debug_object_names_.erase(std::make_tuple(device, type, handle)) == 0) return;
+    // An empty name tells trace consumers the object is unnamed from here on.
+    EmitDebugObjectNamePacket(device, type, handle, std::string());
 }
 
 void DebugMarker::EmitAllDebugMarkers() {
@@ -109,11 +199,11 @@ void DebugMarker::EmitAllDebugMarkers() {
     }
 }
 
-bool DebugMarker::HasDebugObjectName(int32_t type, uint64_t handle, const std::string& name) {
+std::optional<std::string> DebugMarker::GetDebugObjectName(uint64_t device, int32_t type, uint64_t handle) const {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto it = debug_object_names_.find(std::make_pair(type, handle));
-    if (it == debug_object_names_.end()) return false;
-    return it->second.name == name;
+    auto it = debug_object_names_.find(std::make_tuple(device, type, handle));
+    if (it == debug_object_names_.end()) return std::nullopt;
+    return it->second.name;
 }
 
 VkResult DebugMarker::CreateEmulatedMessenger(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
@@ -166,7 +256,6 @@ PFN_vkVoidFunction DebugMarker::GetLayerInstanceCommand(VkInstance instance, con
 }
 
 PFN_vkVoidFunction DebugMarker::GetLayerDeviceCommand(VkDevice device, const char* name) {
-    (void)device;
 
     // VK_EXT_debug_marker
     if (strcmp(name, "vkCmdDebugMarkerBeginEXT") == 0) return reinterpret_cast<PFN_vkVoidFunction>(vkCmdDebugMarkerBeginEXT);
@@ -192,6 +281,16 @@ PFN_vkVoidFunction DebugMarker::GetLayerDeviceCommand(VkDevice device, const cha
         return reinterpret_cast<PFN_vkVoidFunction>(vkQueueEndDebugUtilsLabelEXT);
     if (strcmp(name, "vkQueueInsertDebugUtilsLabelEXT") == 0)
         return reinterpret_cast<PFN_vkVoidFunction>(vkQueueInsertDebugUtilsLabelEXT);
+
+    for (const DestroyHook& hook : kDestroyHooks) {
+        if (strcmp(name, hook.command_name) != 0) continue;
+        // Extension commands are only intercepted when the downstream device provides them.
+        if (hook.is_extension && device != VK_NULL_HANDLE &&
+            layersvt::DispatchDownstreamOr<&VkuDeviceDispatchTable::GetDeviceProcAddr>(nullptr, device, name) == nullptr) {
+            return nullptr;
+        }
+        return hook.function;
+    }
 
     return nullptr;
 }
