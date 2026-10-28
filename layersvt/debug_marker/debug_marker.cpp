@@ -150,14 +150,24 @@ void DebugMarker::PreDestroyInstance(VkInstance instance, const VkAllocationCall
 
 void DebugMarker::PreDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator) {
     (void)pAllocator;
-    std::lock_guard<std::mutex> lock(mutex_);
     uint64_t dev_handle = (uint64_t)device;
-    for (auto it = debug_object_names_.begin(); it != debug_object_names_.end();) {
-        if (it->second.vk_device == dev_handle) {
-            it = debug_object_names_.erase(it);
-        } else {
-            ++it;
+    std::vector<DebugObjectName> removed_names;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (auto it = debug_object_names_.begin(); it != debug_object_names_.end();) {
+            if (it->second.vk_device == dev_handle) {
+                removed_names.push_back(std::move(it->second));
+                it = debug_object_names_.erase(it);
+            } else {
+                ++it;
+            }
         }
+    }
+    // Tell trace consumers that the objects of this device are unnamed from here on. The packets are
+    // emitted after mutex_ is released, because the session start observer takes mutex_ from the tracing
+    // thread (EmitAllDebugMarkers). The device is still alive here, so its handles cannot be reused yet.
+    for (const auto& removed : removed_names) {
+        EmitDebugObjectNamePacket(removed.vk_device, removed.object_type, removed.handle, std::string());
     }
 }
 

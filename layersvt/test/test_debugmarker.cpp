@@ -20,6 +20,8 @@
 #include <gtest/gtest.h>
 #include <stdlib.h>
 #include <cstring>
+#include <set>
+#include <tuple>
 
 #include "test/common/layer_base_test_peer.h"
 
@@ -687,4 +689,72 @@ TEST_F(DebugMarkerTests, ObjectNamePacketFieldsTest) {
     }
     EXPECT_EQ(object_names, (std::vector<std::string>{kObjectName, ""}));
     EXPECT_FALSE(found_unnamed_object);
+}
+
+TEST_F(DebugMarkerTests, DestroyDeviceEmitsEmptyNamePacketsTest) {
+    TEST_DESCRIPTION("Verify destroying a device emits an empty-name packet for each named object of that device only");
+
+    void* mock_dev1_vtable = reinterpret_cast<void*>(0x1000);
+    VkDevice dev1 = reinterpret_cast<VkDevice>(&mock_dev1_vtable);
+    void* mock_dev2_vtable = reinterpret_cast<void*>(0x2000);
+    VkDevice dev2 = reinterpret_cast<VkDevice>(&mock_dev2_vtable);
+    for (VkDevice dev : {dev1, dev2}) {
+        layersvt::LayerBaseTestPeer::GetDispatchTableManager(DebugMarker::Get())
+            .InitDeviceTable(dev, [](VkDevice, const char*) -> PFN_vkVoidFunction {
+                return reinterpret_cast<PFN_vkVoidFunction>(+[](VkDevice, const VkAllocationCallbacks*) {});
+            });
+    }
+
+    perfetto::TracingInitArgs args;
+    args.backends = perfetto::kInProcessBackend;
+    perfetto::Tracing::Initialize(args);
+    perfetto::TrackEvent::Register();
+
+    perfetto::TraceConfig cfg;
+    cfg.add_buffers()->set_size_kb(1024);
+    cfg.add_data_sources()->mutable_config()->set_name("track_event");
+
+    auto tracing_session = perfetto::Tracing::NewTrace();
+    ASSERT_NE(tracing_session, nullptr);
+    tracing_session->Setup(cfg);
+    tracing_session->StartBlocking();
+
+    const uint64_t device1 = (uint64_t)dev1;
+    const uint64_t device2 = (uint64_t)dev2;
+    DebugMarker::Get().SetDebugObjectName(device1, VK_OBJECT_TYPE_BUFFER, 0x1, "Device1Buffer");
+    DebugMarker::Get().SetDebugObjectName(device1, VK_OBJECT_TYPE_IMAGE, 0x2, "Device1Image");
+    // device2 uses the same buffer handle value as device1.
+    DebugMarker::Get().SetDebugObjectName(device2, VK_OBJECT_TYPE_BUFFER, 0x1, "Device2Buffer");
+
+    layersvt::LayerBaseTestPeer::DestroyDevice(dev1, nullptr);
+
+    perfetto::TrackEvent::Flush();
+    tracing_session->StopBlocking();
+    std::vector<char> raw_trace = tracing_session->ReadTraceBlocking();
+    ASSERT_FALSE(raw_trace.empty());
+
+    std::set<std::tuple<uint64_t, int32_t, uint64_t>> cleared_objects;
+    perfetto::protos::pbzero::Trace::Decoder trace(reinterpret_cast<const uint8_t*>(raw_trace.data()), raw_trace.size());
+    for (auto it = trace.packet(); it; ++it) {
+        perfetto::protos::pbzero::TracePacket::Decoder packet(*it);
+        if (!packet.has_vulkan_api_event()) {
+            continue;
+        }
+        perfetto::protos::pbzero::VulkanApiEvent::Decoder vk_event(packet.vulkan_api_event());
+        if (!vk_event.has_vk_debug_utils_object_name()) {
+            continue;
+        }
+        perfetto::protos::pbzero::VulkanApiEvent_VkDebugUtilsObjectName::Decoder event(vk_event.vk_debug_utils_object_name());
+        if (event.object_name().size == 0) {
+            cleared_objects.emplace(event.vk_device(), event.object_type(), event.object());
+        }
+    }
+    const std::set<std::tuple<uint64_t, int32_t, uint64_t>> expected_cleared_objects = {
+        {device1, VK_OBJECT_TYPE_BUFFER, 0x1},
+        {device1, VK_OBJECT_TYPE_IMAGE, 0x2},
+    };
+    EXPECT_EQ(cleared_objects, expected_cleared_objects);
+    EXPECT_EQ(DebugMarker::Get().GetDebugObjectName(device2, VK_OBJECT_TYPE_BUFFER, 0x1), "Device2Buffer");
+
+    layersvt::LayerBaseTestPeer::DestroyDevice(dev2, nullptr);
 }
