@@ -45,6 +45,10 @@ else()
     add_compile_options(-Wpointer-arith)
 endif()
 
+if (NOT MSVC)
+    set_source_files_properties(perfetto/perfetto.cc PROPERTIES COMPILE_OPTIONS "-Wno-deprecated-declarations")
+endif()
+
 add_subdirectory(common)
 
 if(BUILD_APIDUMP)
